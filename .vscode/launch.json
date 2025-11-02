@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Launch Main (Gradle)",
+      "request": "launch",
+      "mainClass": "com.nmsdecompressor.SaveManagerApp",
+      "projectName": "nms-ship-seed-editor",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "gradle build",
+      "vmArgs": "--add-modules javafx.controls,javafx.fxml"
+    },
+    {
+      "type": "java",
+      "name": "Debug (Attach to Gradle App)",
+      "request": "attach",
+      "hostName": "localhost",
+      "port": 5005
+    }
+  ]
+}

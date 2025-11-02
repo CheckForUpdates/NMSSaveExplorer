@@ -1,0 +1,94 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'org.graalvm.buildtools.native' version '0.10.2'
+}
+
+group = 'com.nmsdecompressor'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+        //vendor = JvmVendorSpec.matching("GraalVM")
+    }
+}
+
+application {
+    mainClass = 'com.nmsdecompressor.SaveManagerApp'
+}
+
+// ---- GraalVM native build for Linux ----
+graalvmNative {
+    toolchainDetection = false
+    binaries {
+        main {
+            // Explicitly tell Gradle which Java toolchain to use
+            javaLauncher.set(javaToolchains.launcherFor {
+                languageVersion = JavaLanguageVersion.of(21)
+            })
+            imageName = 'NMSSaveExplorer'
+            buildArgs.add('--no-fallback')
+        }
+    }
+}
+
+// ---- JPackage Windows launcher ----
+// runtime {
+//     imageZip = file("$buildDir/image.zip")
+//     jpackage {
+//         installerType = 'exe'
+//         installerName = 'NMSSaveExplorer'
+//         winConsole = true  // true = console app, false = GUI
+//         appVersion = '1.0.0'
+//         vendor = 'YourCompanyName'        
+//         // icon = file('src/main/resources/icon.ico')
+//     }
+// }
+
+
+javafx {
+    version = '21'
+    modules = [ 'javafx.controls', 'javafx.fxml' ]
+}
+
+dependencies {
+    implementation 'org.lz4:lz4-java:1.8.0'
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'net.java.dev.jna:jna:5.17.0'
+    implementation 'org.fxmisc.richtext:richtextfx:0.11.0'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+tasks.named('run') {
+    // Optional: ensures JavaFX is properly attached even in IDEs
+    jvmArgs = [
+            '--add-modules', 'javafx.controls,javafx.fxml'
+    ]
+}
+
+tasks.register('fatJar', Jar) {
+    dependsOn tasks.named('classes')
+    manifest {
+        attributes('Main-Class': application.mainClass.get())
+    }
+    from {
+        configurations.runtimeClasspath.get().collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    with tasks.named('jar').get() // ✅ Fixed line
+}

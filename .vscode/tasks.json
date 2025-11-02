@@ -1,0 +1,27 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "gradle build",
+      "type": "shell",
+      "command": "./gradlew build",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gradle"],
+      "detail": "Runs the Gradle build task"
+    },
+    {
+      "label": "gradle clean",
+      "type": "shell",
+      "command": "./gradlew clean",
+      "group": "build",
+      "detail": "Cleans the Gradle project"
+    },
+    {
+      "label": "gradle run",
+      "type": "shell",
+      "command": "./gradlew run",
+      "group": "build",
+      "detail": "Runs the Gradle run task"
+    }
+  ]
+}

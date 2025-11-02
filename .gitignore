@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+out/
+# IntelliJ IDEA
+.idea/
+*.iml
+# VS Code
+.vscode/*.log
+# Java
+*.class
+bin/
+# Logs
+*.log
+# Generated jars
+*.jar
+# Python
+__pycache__/
+*.pyc
+# Other
+*.DS_Store
+*.log*
+target/
