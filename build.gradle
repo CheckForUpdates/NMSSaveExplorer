@@ -6,7 +6,19 @@ plugins {
     id 'org.graalvm.buildtools.native' version '0.10.2'
 }
 
-group = 'com.nmsdecompressor'
+def osName = org.gradle.internal.os.OperatingSystem.current()
+def platform = osName.isWindows() ? 'win' :
+        osName.isMacOsX() ? 'mac' :
+                'linux'
+
+dependencies {
+    implementation "org.openjfx:javafx-base:21:${platform}"
+    implementation "org.openjfx:javafx-controls:21:${platform}"
+    implementation "org.openjfx:javafx-graphics:21:${platform}"
+    implementation "org.openjfx:javafx-fxml:21:${platform}"
+}
+
+group = 'com.nmssaveexplorer'
 version = '1.0.0'
 
 repositories {
@@ -21,7 +33,7 @@ java {
 }
 
 application {
-    mainClass = 'com.nmsdecompressor.SaveManagerApp'
+    mainClass = 'com.nmssaveexplorer.Main'
 }
 
 // ---- GraalVM native build for Linux ----
@@ -83,12 +95,29 @@ tasks.named('run') {
 }
 
 tasks.register('fatJar', Jar) {
-    dependsOn tasks.named('classes')
+    group = 'build'
+    description = 'Assembles a self-contained JAR (fat/uber JAR) with all dependencies.'
+
+    dependsOn(classes)
+
+    archiveBaseName.set("${project.name}-all")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
     manifest {
-        attributes('Main-Class': application.mainClass.get())
+        attributes(
+                'Main-Class': application.mainClass.orNull ?: 'com.nmssaveexplorer.SaveManagerApp'
+        )
     }
+
     from {
-        configurations.runtimeClasspath.get().collect { it.isDirectory() ? it : zipTree(it) }
+        configurations.runtimeClasspath.collect { file ->
+            file.isDirectory() ? file : zipTree(file)
+        }
     }
-    with tasks.named('jar').get() // ✅ Fixed line
+
+    // include compiled classes and resources
+    with(tasks.named('jar').get())
+
+    destinationDirectory = file("$buildDir/libs")
 }
+

@@ -16,7 +16,9 @@
   "java.signatureHelp.enabled": true,
   "java.errors.incompleteClasspath.severity": "warning",
   "editor.formatOnSave": true,
-  "editor.codeActionsOnSave": { "source.organizeImports": true },
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit"
+  },
   "kotlin.compiler.jvm.target": "21",
   "kotlin.javaDebugger.enabled": true,
   "java.completion.imports.limit": 9999
