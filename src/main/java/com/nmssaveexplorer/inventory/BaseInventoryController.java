@@ -6,13 +6,13 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.nmssaveexplorer.registry.IconRegistry;
+import com.nmssaveexplorer.registry.ItemDefinitionRegistry;
 import javafx.application.Platform;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.VPos;
 import javafx.scene.Node;
-import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.TransferMode;
@@ -23,11 +23,18 @@ import javafx.scene.layout.RowConstraints;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
+import javafx.scene.text.TextAlignment;
 
 public abstract class BaseInventoryController {
 
     protected static final int CELL_SIZE = 100;
+    protected static final int ICON_SIZE = 72;
     protected static final int GRID_WIDTH = 10;
+    private static final String GRID_CLASS = "inventory-grid";
+    private static final String PLACEHOLDER_CLASS = "inventory-slot-placeholder";
+    private static final String PANE_CLASS = "inventory-slot-pane";
+    private static final String NAME_CLASS = "inventory-slot-name";
+    private static final String AMOUNT_CLASS = "inventory-slot-amount";
 
     private static final Set<String> LOGGED_MISSING_ICONS = ConcurrentHashMap.newKeySet();
 
@@ -57,7 +64,7 @@ public abstract class BaseInventoryController {
         grid.setHgap(1);
         grid.setVgap(1);
         grid.setAlignment(Pos.TOP_LEFT);
-        grid.setStyle("-fx-background-color:#111;");
+        grid.getStyleClass().add(GRID_CLASS);
 
         int maxY = 0;
         for (JsonElement e : validSlotIndices) {
@@ -91,7 +98,7 @@ public abstract class BaseInventoryController {
             for (int x = 0; x < GRID_WIDTH; x++) {
                 StackPane cell = new StackPane();
                 cell.setPrefSize(CELL_SIZE, CELL_SIZE);
-                cell.setStyle("-fx-border-color:#444; -fx-background-color:#1b1b1b;");
+                cell.getStyleClass().add(PLACEHOLDER_CLASS);
                 grid.add(cell, x, y);
             }
         }
@@ -104,17 +111,23 @@ public abstract class BaseInventoryController {
 
             BorderPane pane = new BorderPane();
             pane.setPrefSize(CELL_SIZE, CELL_SIZE);
-            pane.setStyle("-fx-background-color:#2e2e2e; -fx-border-color:#666;");
+            pane.getStyleClass().add(PANE_CLASS);
 
             String id = item.has("b2n") ? item.get("b2n").getAsString() : "Unknown";
-            int amt = item.has("1o9") ? item.get("1o9").getAsInt() : 1;
+            int amount = item.has("1o9") ? item.get("1o9").getAsInt() : 1;
             int max = item.has("F9q") ? item.get("F9q").getAsInt() : 0;
-            JsonObject typeObj = item.has("Vn8") ? item.getAsJsonObject("Vn8") : null;
-            String type = (typeObj != null && typeObj.has("elv")) ? typeObj.get("elv").getAsString() : "Unknown";
 
-            Text idText = new Text(id);
-            Text amountText = new Text(amt + (max > 0 ? "/" + max : ""));
-            Text typeText = new Text(type);
+            String displayName = ItemDefinitionRegistry.getDisplayName(id);
+            if (displayName == null || displayName.isBlank()) {
+                displayName = id;
+            }
+            Text nameText = new Text(displayName);
+            nameText.setTextAlignment(TextAlignment.CENTER);
+            nameText.getStyleClass().add(NAME_CLASS);
+            nameText.setVisible(false);
+
+            Text amountText = new Text(amount + (max > 0 ? "/" + max : ""));
+            amountText.getStyleClass().add(AMOUNT_CLASS);
 
             VBox box = new VBox();
             box.setAlignment(Pos.CENTER);
@@ -134,15 +147,27 @@ public abstract class BaseInventoryController {
                     System.out.println("[InventoryIcon] Loaded icon for " + id + " size=" + icon.getWidth() + "x" + icon.getHeight());
                 }
                 ImageView imageView = new ImageView(icon);
-                imageView.setFitWidth(42);
-                imageView.setFitHeight(42);
+                imageView.setFitWidth(ICON_SIZE);
+                imageView.setFitHeight(ICON_SIZE);
                 imageView.setPreserveRatio(true);
                 box.getChildren().add(imageView);
             }
+            box.getChildren().add(amountText);
 
-            box.getChildren().addAll(idText, amountText, typeText);
-            pane.setCenter(box);
-            Tooltip.install(pane, new Tooltip(item.toString()));
+            StackPane nameLayer = new StackPane(nameText);
+            nameLayer.setMouseTransparent(true);
+            nameLayer.setPickOnBounds(false);
+            nameLayer.setVisible(false);
+            StackPane.setAlignment(nameText, Pos.TOP_CENTER);
+            StackPane.setAlignment(nameLayer, Pos.TOP_CENTER);
+
+            StackPane layeredContent = new StackPane(box, nameLayer);
+            pane.setCenter(layeredContent);
+
+            pane.hoverProperty().addListener((obs, wasHovering, isHovering) -> {
+                nameLayer.setVisible(isHovering);
+                nameText.setVisible(isHovering);
+            });
 
             final int startX = x;
             final int startY = y;
@@ -227,4 +252,5 @@ public abstract class BaseInventoryController {
         }
         return null;
     }
+
 }

@@ -3,43 +3,56 @@
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressIndicator?>
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 
-<BorderPane prefHeight="360.0" prefWidth="640.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.nmssaveexplorer.MainMenuController">
+<StackPane xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.nmssaveexplorer.MainMenuController">
 
-    <top>
-        <VBox spacing="6" style="-fx-padding: 20;">
-            <Label style="-fx-font-size: 20px; -fx-font-weight: bold;" text="No Man's Sky Save Manager" />
-            <Label fx:id="headingLabel" text="Select a save file to begin." />
-        </VBox>
-    </top>
+    <BorderPane prefHeight="360.0" prefWidth="640.0">
 
-    <center>
-        <VBox spacing="12" style="-fx-padding: 0 20 20 20;">
-            <Label style="-fx-font-weight: bold;" text="Detected save files:" />
-            <ComboBox fx:id="saveCombo" prefWidth="420" promptText="Choose a save file..." />
-
-            <HBox spacing="8">
-                <Button fx:id="refreshButton" onAction="#onRefreshSaves" text="Refresh" />
-                <Button fx:id="browseButton" onAction="#onBrowseForSave" text="Browse..." />
-            </HBox>
-
-            <Separator />
-
-            <VBox spacing="8">
-                <Button fx:id="openJsonButton" onAction="#onOpenJsonEditor" prefWidth="220" text="Open Raw JSON" />
-                <Button fx:id="openInventoryButton" onAction="#onOpenExosuitInventory" prefWidth="220" text="Open Inventories" />
-                <Button fx:id="saveChangesButton" onAction="#onSaveChanges" prefWidth="220" text="Save Changes" />
+        <top>
+            <VBox spacing="6" style="-fx-padding: 20;">
+                <Label style="-fx-font-size: 20px; -fx-font-weight: bold;" text="No Man's Sky Save Manager" />
+                <Label fx:id="headingLabel" text="Select a save file to begin." />
             </VBox>
-        </VBox>
-    </center>
+        </top>
 
-    <bottom>
-        <HBox style="-fx-padding: 10 20 20 20;">
-            <Label fx:id="statusLabel" text="Ready." />
-        </HBox>
-    </bottom>
-</BorderPane>
+        <center>
+            <VBox spacing="12" style="-fx-padding: 0 20 20 20;">
+                <Label style="-fx-font-weight: bold;" text="Detected save files:" />
+                <ComboBox fx:id="saveCombo" prefWidth="420" promptText="Choose a save file..." />
+
+                <HBox spacing="8">
+                    <Button fx:id="refreshButton" onAction="#onRefreshSaves" text="Refresh" />
+                    <Button fx:id="browseButton" onAction="#onBrowseForSave" text="Browse..." />
+                </HBox>
+
+                <Separator />
+
+                <VBox spacing="8">
+                    <Button fx:id="openJsonButton" onAction="#onOpenJsonEditor" prefWidth="220" text="Open Raw JSON" />
+                    <Button fx:id="openInventoryButton" onAction="#onOpenExosuitInventory" prefWidth="220" text="Open Inventories" />
+                    <Button fx:id="saveChangesButton" onAction="#onSaveChanges" prefWidth="220" text="Save Changes" />
+                </VBox>
+            </VBox>
+        </center>
+
+        <bottom>
+            <HBox style="-fx-padding: 10 20 20 20;">
+                <Label fx:id="statusLabel" text="Ready." />
+            </HBox>
+        </bottom>
+    </BorderPane>
+
+    <StackPane fx:id="loadingOverlay" managed="false" pickOnBounds="true" style="-fx-background-color: rgba(0, 0, 0, 0.55);" visible="false">
+        <VBox alignment="CENTER" spacing="12" style="-fx-background-color: rgba(25, 25, 25, 0.9); -fx-background-radius: 10; -fx-padding: 24;">
+            <ProgressIndicator prefHeight="60.0" prefWidth="60.0" progress="-1.0" />
+            <Label fx:id="loadingMessageLabel" style="-fx-text-fill: white; -fx-font-size: 14px;" text="Loading..." />
+        </VBox>
+    </StackPane>
+
+</StackPane>

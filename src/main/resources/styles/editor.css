@@ -1,0 +1,38 @@
+/* editor.css */
+
+.styled-text-area .caret {
+  -fx-stroke: #bcbec4; /* caret line color */
+}
+
+/* Entire editor background */
+.code-area,
+.styled-text-area,
+.paragraph-text,
+.text-area {
+  -fx-background-color: #1e1e1e;
+  -fx-control-inner-background: #1e1e1e;
+  -fx-font-family: "Hack";
+  -fx-font-size: 13px;
+}
+
+/* Default text color */
+.text {
+  -fx-fill: #bcbec4; /* <-- the actual rendered glyphs */
+}
+
+/* Line numbers and gutter */
+.lineno,
+.paragraph-box {
+  -fx-background-color: #1e1e1e;
+  -fx-text-fill: #858585;
+}
+
+/* Scrollbars */
+.virtual-flow > .scroll-bar:vertical,
+.virtual-flow > .scroll-bar:horizontal {
+  -fx-background-color: #1e1e1e;
+}
+.virtual-flow > .scroll-bar:vertical > .thumb,
+.virtual-flow > .scroll-bar:horizontal > .thumb {
+  -fx-background-color: #444444;
+}

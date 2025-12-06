@@ -3,20 +3,9 @@ plugins {
     id 'application'
     id 'org.openjfx.javafxplugin' version '0.1.0'
     id 'com.github.johnrengelman.shadow' version '8.1.1'
-    id 'org.graalvm.buildtools.native' version '0.10.2'
+    id 'org.beryx.runtime' version '1.13.1'
 }
 
-def osName = org.gradle.internal.os.OperatingSystem.current()
-def platform = osName.isWindows() ? 'win' :
-        osName.isMacOsX() ? 'mac' :
-                'linux'
-
-dependencies {
-    implementation "org.openjfx:javafx-base:21:${platform}"
-    implementation "org.openjfx:javafx-controls:21:${platform}"
-    implementation "org.openjfx:javafx-graphics:21:${platform}"
-    implementation "org.openjfx:javafx-fxml:21:${platform}"
-}
 
 group = 'com.nmssaveexplorer'
 version = '1.0.0'
@@ -25,52 +14,31 @@ repositories {
     mavenCentral()
 }
 
+// ---- Java toolchain ----
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
-        //vendor = JvmVendorSpec.matching("GraalVM")
     }
 }
 
+// ---- Application entrypoint ----
 application {
-    mainClass = 'com.nmssaveexplorer.Main'
+    mainClass = 'com.nmssaveexplorer.AppLauncher'
 }
 
-// ---- GraalVM native build for Linux ----
-graalvmNative {
-    toolchainDetection = false
-    binaries {
-        main {
-            // Explicitly tell Gradle which Java toolchain to use
-            javaLauncher.set(javaToolchains.launcherFor {
-                languageVersion = JavaLanguageVersion.of(21)
-            })
-            imageName = 'NMSSaveExplorer'
-            buildArgs.add('--no-fallback')
-        }
-    }
-}
+// ---- Platform detection for OpenJFX ----
+def os = org.gradle.internal.os.OperatingSystem.current()
+def platform = os.isWindows() ? 'win' : os.isMacOsX() ? 'mac' : 'linux'
 
-// ---- JPackage Windows launcher ----
-// runtime {
-//     imageZip = file("$buildDir/image.zip")
-//     jpackage {
-//         installerType = 'exe'
-//         installerName = 'NMSSaveExplorer'
-//         winConsole = true  // true = console app, false = GUI
-//         appVersion = '1.0.0'
-//         vendor = 'YourCompanyName'        
-//         // icon = file('src/main/resources/icon.ico')
-//     }
-// }
-
-
-javafx {
-    version = '21'
-    modules = [ 'javafx.controls', 'javafx.fxml' ]
-}
-
+// ---- Dependencies ----
 dependencies {
+    // JavaFX (use platform classifier)
+    implementation "org.openjfx:javafx-base:21:${platform}"
+    implementation "org.openjfx:javafx-controls:21:${platform}"
+    implementation "org.openjfx:javafx-graphics:21:${platform}"
+    implementation "org.openjfx:javafx-fxml:21:${platform}"
+
+    // Other runtime libraries
     implementation 'org.lz4:lz4-java:1.8.0'
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'net.java.dev.jna:jna:5.17.0'
@@ -79,45 +47,42 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
 }
 
+// ---- JavaFX plugin configuration ----
+javafx {
+    version = '21'
+    modules = ['javafx.controls', 'javafx.fxml']
+}
+
+// ---- Build encoding ----
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+// ---- Test setup ----
 tasks.named('test') {
     useJUnitPlatform()
 }
 
-tasks.named('run') {
-    // Optional: ensures JavaFX is properly attached even in IDEs
-    jvmArgs = [
-            '--add-modules', 'javafx.controls,javafx.fxml'
+// ---- ShadowJar (fat JAR) ----
+tasks.named('shadowJar') {
+    archiveBaseName.set("NMSSaveExplorer")
+    archiveClassifier.set("all")
+}
+
+// ---- Runtime image (JLink) ----
+// Uses org.beryx.runtime to generate a standalone runtime
+runtime {
+    options = [
+        '--strip-debug',
+        '--compress', '2',
+        '--no-header-files',
+        '--no-man-pages'
     ]
-}
 
-tasks.register('fatJar', Jar) {
-    group = 'build'
-    description = 'Assembles a self-contained JAR (fat/uber JAR) with all dependencies.'
-
-    dependsOn(classes)
-
-    archiveBaseName.set("${project.name}-all")
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-
-    manifest {
-        attributes(
-                'Main-Class': application.mainClass.orNull ?: 'com.nmssaveexplorer.SaveManagerApp'
-        )
+    // The jpackage block is optional; this only builds the runtime image
+    jpackage {
+        imageName = 'NMSSaveExplorer'
+        installerName = 'NMSSaveExplorer'
+        appVersion = '1.0.0'
     }
-
-    from {
-        configurations.runtimeClasspath.collect { file ->
-            file.isDirectory() ? file : zipTree(file)
-        }
-    }
-
-    // include compiled classes and resources
-    with(tasks.named('jar').get())
-
-    destinationDirectory = file("$buildDir/libs")
 }
-

@@ -1,16 +1,16 @@
 package com.nmssaveexplorer;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -25,63 +25,181 @@ public final class SaveGameLocator {
     }
 
     public static List<SaveFile> discoverSaves() {
-        Map<Path, SaveFile> result = new LinkedHashMap<>();
+        OsType osType = OsType.detect();
+        Map<String, SaveFile> result = new LinkedHashMap<>();
+        boolean caseInsensitiveFs = osType == OsType.WINDOWS || osType == OsType.MAC;
 
-        for (Path root : candidateRoots()) {
+        for (Path root : candidateRoots(osType)) {
             if (root == null || !Files.isDirectory(root)) {
                 continue;
             }
 
-            try (Stream<Path> stream = Files.walk(root, SEARCH_DEPTH)) {
-                stream.filter(Files::isRegularFile)
-                      .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".hg"))
-                      .sorted()
-                      .forEach(path -> result.putIfAbsent(path.toAbsolutePath(), new SaveFile(path.toAbsolutePath(), root)));
-            } catch (Exception ignored) {
-                // Ignore inaccessible roots; caller can present fallback options.
-            }
+            scanForSaves(root, root, caseInsensitiveFs, result);
+            scanSteamProfileFolders(root, caseInsensitiveFs, result);
         }
 
         return new ArrayList<>(result.values());
     }
 
-    private static List<Path> candidateRoots() {
-        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        String userHome = System.getProperty("user.home", "");
+    private static List<Path> candidateRoots(OsType osType) {
+        LinkedHashSet<Path> roots = new LinkedHashSet<>();
 
-        List<Path> roots = new ArrayList<>();
-
-        if (osName.contains("win")) {
-            String appData = System.getenv("APPDATA");
-            if (appData != null && !appData.isBlank()) {
-                roots.add(Paths.get(appData, "HelloGames", "NMS"));
-            }
-            String localAppData = System.getenv("LOCALAPPDATA");
-            if (localAppData != null && !localAppData.isBlank()) {
-                roots.add(Paths.get(localAppData, "HelloGames", "NMS"));
-            }
-        } else if (osName.contains("mac")) {
-            roots.add(Paths.get(userHome, "Library", "Application Support", "HelloGames", "NMS"));
-        } else {
-            // Default to Linux/Steam Proton layout
-            Path protonRoot = Paths.get(userHome, ".steam", "steam", "steamapps", "compatdata", "275850", "pfx", "drive_c", "users", "steamuser");
-            if (Files.isDirectory(protonRoot)) {
-                try (Stream<Path> users = Files.list(protonRoot)) {
-                    Set<Path> userDirs = users.collect(Collectors.toSet());
-                    for (Path user : userDirs) {
-                        roots.add(user.resolve(Paths.get("AppData", "Roaming", "HelloGames", "NMS")));
-                    }
-                } catch (Exception ignored) {
-                    // ignore
-                }
-            }
-            roots.add(Paths.get(userHome, ".config", "HelloGames", "NMS"));
-            roots.add(Paths.get(userHome, ".local", "share", "HelloGames", "NMS"));
+        switch (osType) {
+            case WINDOWS -> roots.addAll(windowsCandidates());
+            case MAC -> roots.addAll(macCandidates());
+            case LINUX -> roots.addAll(linuxCandidates());
+            case UNKNOWN -> {}
         }
 
         return roots.stream()
                 .filter(Objects::nonNull)
-                .collect(Collectors.toCollection(ArrayList::new));
+                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+    }
+
+    private static List<Path> windowsCandidates() {
+        List<Path> roots = new ArrayList<>();
+        addEnvPath(roots, "APPDATA", "HelloGames", "NMS");
+        addEnvPath(roots, "LOCALAPPDATA", "HelloGames", "NMS");
+
+        String userHome = System.getProperty("user.home", "");
+        if (!userHome.isBlank()) {
+            Path home = Paths.get(userHome);
+            roots.add(home.resolve(Paths.get("Saved Games", "HelloGames", "NMS")));
+            roots.add(home.resolve(Paths.get("Documents", "HelloGames", "NMS")));
+        }
+
+        return roots;
+    }
+
+    private static List<Path> macCandidates() {
+        String userHome = System.getProperty("user.home", "");
+        List<Path> roots = new ArrayList<>();
+        if (!userHome.isBlank()) {
+            roots.add(Paths.get(userHome, "Library", "Application Support", "HelloGames", "NMS"));
+        }
+        return roots;
+    }
+
+    private static List<Path> linuxCandidates() {
+        List<Path> roots = new ArrayList<>();
+        String userHome = System.getProperty("user.home", "");
+        if (!userHome.isBlank()) {
+            Path home = Paths.get(userHome);
+            roots.add(home.resolve(Paths.get(".local", "share", "HelloGames", "NMS")));
+            roots.add(home.resolve(Paths.get(".config", "HelloGames", "NMS")));
+
+            List<Path> steamRoots = List.of(
+                    home.resolve(Paths.get(".steam", "steam")),
+                    home.resolve(Paths.get(".steam", "root")),
+                    home.resolve(Paths.get(".local", "share", "Steam"))
+            );
+            for (Path steamRoot : steamRoots) {
+                roots.addAll(protonCandidates(steamRoot));
+            }
+        }
+
+        return roots;
+    }
+
+    private static List<Path> protonCandidates(Path steamRoot) {
+        List<Path> roots = new ArrayList<>();
+        if (steamRoot == null) {
+            return roots;
+        }
+
+        Path compatData = steamRoot.resolve(Paths.get("steamapps", "compatdata", "275850"));
+        if (!Files.isDirectory(compatData)) {
+            return roots;
+        }
+
+        Path usersRoot = compatData.resolve(Paths.get("pfx", "drive_c", "users"));
+        if (!Files.isDirectory(usersRoot)) {
+            return roots;
+        }
+
+        try (Stream<Path> users = Files.list(usersRoot)) {
+            users.filter(Files::isDirectory)
+                 .map(user -> user.resolve(Paths.get("Application Data", "HelloGames", "NMS")))
+                 .forEach(roots::add);
+        } catch (IOException ignored) {
+            // best effort only
+        }
+
+        return roots;
+    }
+
+    private static void addEnvPath(List<Path> roots, String envVar, String... more) {
+        String base = System.getenv(envVar);
+        if (base != null && !base.isBlank()) {
+            roots.add(Paths.get(base, more));
+        }
+    }
+
+    private static void scanSteamProfileFolders(Path root, boolean caseInsensitiveFs, Map<String, SaveFile> result) {
+        try (Stream<Path> children = Files.list(root)) {
+            children.filter(Files::isDirectory)
+                    .filter(child -> {
+                        String name = child.getFileName().toString().toLowerCase(Locale.ROOT);
+                        return name.startsWith("st_");
+                    })
+                    .forEach(profileDir -> scanForSaves(profileDir, root, caseInsensitiveFs, result));
+        } catch (IOException ignored) {
+            // Optional roots; ignore errors.
+        }
+    }
+
+    private static void scanForSaves(Path searchRoot, Path displayRoot, boolean caseInsensitiveFs, Map<String, SaveFile> result) {
+        try (Stream<Path> stream = Files.walk(searchRoot, SEARCH_DEPTH)) {
+            stream.filter(Files::isRegularFile)
+                  .filter(path -> {
+                      String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+                      return name.endsWith(".hg") && name.startsWith("save");
+                  })
+                  .sorted()
+                  .forEach(path -> {
+                      Path canonical = canonicalPath(path);
+                      String key = pathKey(canonical, caseInsensitiveFs);
+                      if (key != null) {
+                          result.putIfAbsent(key, new SaveFile(canonical, displayRoot));
+                      }
+                  });
+        } catch (Exception ignored) {
+            // Ignore inaccessible roots; caller can present fallback options.
+        }
+    }
+
+    private static Path canonicalPath(Path path) {
+        try {
+            return path.toRealPath();
+        } catch (IOException ex) {
+            return path.toAbsolutePath().normalize();
+        }
+    }
+
+    private static String pathKey(Path path, boolean caseInsensitive) {
+        if (path == null) {
+            return null;
+        }
+        String key = path.toString();
+        return caseInsensitive ? key.toLowerCase(Locale.ROOT) : key;
+    }
+
+    private enum OsType {
+        WINDOWS, MAC, LINUX, UNKNOWN;
+
+        static OsType detect() {
+            String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+            if (osName.contains("win")) {
+                return WINDOWS;
+            }
+            if (osName.contains("mac")) {
+                return MAC;
+            }
+            if (osName.contains("nix") || osName.contains("nux") || osName.contains("aix") || osName.contains("linux")) {
+                return LINUX;
+            }
+            return UNKNOWN;
+        }
     }
 
     public record SaveFile(Path path, Path root) {

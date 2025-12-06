@@ -2,6 +2,7 @@ package com.nmssaveexplorer;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.HashMap;
@@ -19,35 +20,44 @@ public class JsonMapper {
 
     /** Load mapping file (handles both flattened and legacy formats) */
     public static void loadMapping(File mappingFile) throws IOException {
-        mapping.clear();
-        loaded = false;
-
-        String jsonText = Files.readString(mappingFile.toPath(), StandardCharsets.UTF_8);
-        JsonElement root = JsonParser.parseString(jsonText);
-
-        if (root.isJsonObject()) {
-            JsonObject obj = root.getAsJsonObject();
-
-            // Case 1: flattened map (no "Mapping" array)
-            if (!obj.has("Mapping")) {
-                for (Map.Entry<String, JsonElement> entry : obj.entrySet()) {
-                    mapping.put(entry.getKey(), entry.getValue().getAsString());
-                }
-            }
-            // Case 2: legacy format with "Mapping" array
-            else {
-                JsonArray arr = obj.getAsJsonArray("Mapping");
-                for (JsonElement e : arr) {
-                    JsonObject pair = e.getAsJsonObject();
-                    String key = pair.get("Key").getAsString();
-                    String val = pair.get("Value").getAsString();
-                    mapping.put(key, val);
-                }
-            }
+        try (InputStream in = Files.newInputStream(mappingFile.toPath())) {
+            loadMapping(in);
         }
+    }
 
-        loaded = true;
-        System.out.println("[JsonMapper] Flattened mapping entries: " + mapping.size());
+    /** Load mapping from any input stream (e.g., classpath resource in a fat jar). */
+    public static void loadMapping(InputStream inputStream) throws IOException {
+        try (InputStream in = inputStream) {
+            mapping.clear();
+            loaded = false;
+
+            String jsonText = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            JsonElement root = JsonParser.parseString(jsonText);
+
+            if (root.isJsonObject()) {
+                JsonObject obj = root.getAsJsonObject();
+
+                // Case 1: flattened map (no "Mapping" array)
+                if (!obj.has("Mapping")) {
+                    for (Map.Entry<String, JsonElement> entry : obj.entrySet()) {
+                        mapping.put(entry.getKey(), entry.getValue().getAsString());
+                    }
+                }
+                // Case 2: legacy format with "Mapping" array
+                else {
+                    JsonArray arr = obj.getAsJsonArray("Mapping");
+                    for (JsonElement e : arr) {
+                        JsonObject pair = e.getAsJsonObject();
+                        String key = pair.get("Key").getAsString();
+                        String val = pair.get("Value").getAsString();
+                        mapping.put(key, val);
+                    }
+                }
+            }
+
+            loaded = true;
+            System.out.println("[JsonMapper] Flattened mapping entries: " + mapping.size());
+        }
     }
 
     /** Map short → readable key; returns original if missing */

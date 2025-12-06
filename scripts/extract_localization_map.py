@@ -21,6 +21,7 @@ from xml.etree import ElementTree as ET
 ICON_PREFIX = "TEXTURES/UI/FRONTEND/ICONS/"
 TARGET_ENTRY_TYPES = {
     "GcProductData",
+    "GcTechnology",
     "GcTechnologyData",
     "GcRealitySubstanceData",
     "GcProceduralTechnologyData",
@@ -34,9 +35,12 @@ class ItemEntry:
     name_token: Optional[str]
     icon_filename: str
     source_file: Path
+    deploys_into: Optional[str] = None
 
 
-def parse_localisation(file_path: Path, language: str, fallbacks: Sequence[str]) -> Dict[str, str]:
+def parse_localisation(
+    file_path: Path, language: str, fallbacks: Sequence[str]
+) -> Dict[str, str]:
     """Return a map of localisation token -> display string from the given file."""
     try:
         tree = ET.parse(file_path)
@@ -45,7 +49,9 @@ def parse_localisation(file_path: Path, language: str, fallbacks: Sequence[str])
         return {}
 
     entries: Dict[str, str] = {}
-    for entry in tree.findall(".//Property[@name='Table'][@value='TkLocalisationEntry']"):
+    for entry in tree.findall(
+        ".//Property[@name='Table'][@value='TkLocalisationEntry']"
+    ):
         token = None
         values = {}
         for prop in entry.findall("Property"):
@@ -73,7 +79,9 @@ def parse_localisation(file_path: Path, language: str, fallbacks: Sequence[str])
     return entries
 
 
-def collect_localisation(root: Path, language: str, fallbacks: Sequence[str]) -> Dict[str, str]:
+def collect_localisation(
+    root: Path, language: str, fallbacks: Sequence[str]
+) -> Dict[str, str]:
     tokens: Dict[str, str] = {}
     for file_path in sorted(root.rglob("*.MXML")):
         file_tokens = parse_localisation(file_path, language, fallbacks)
@@ -99,6 +107,8 @@ def iter_item_entries(file_path: Path) -> Iterator[ItemEntry]:
         name_token: Optional[str] = None
         icon_filename: Optional[str] = None
 
+        deploys_into: Optional[str] = None
+
         for child in element.findall("Property"):
             name = child.attrib.get("name")
             value = child.attrib.get("value", "").strip()
@@ -110,6 +120,8 @@ def iter_item_entries(file_path: Path) -> Iterator[ItemEntry]:
                 name_token = value
             elif name == "Icon":
                 icon_filename = extract_icon_filename(child)
+            elif name == "DeploysInto" and value:
+                deploys_into = value
 
         if not item_id or not icon_filename:
             continue
@@ -119,6 +131,7 @@ def iter_item_entries(file_path: Path) -> Iterator[ItemEntry]:
             name_token=name_token,
             icon_filename=icon_filename,
             source_file=file_path,
+            deploys_into=deploys_into,
         )
 
 
@@ -187,32 +200,46 @@ def build_item_map(
 ) -> Dict[str, Dict[str, str]]:
     mapping: Dict[str, Dict[str, str]] = {}
 
+    def register(item_id: str, display_name: str, icon_path: str, source: Path, note: str = "") -> None:
+        key = item_id.upper()
+        existing = mapping.get(key)
+        if existing:
+            if existing["icon"] != icon_path or existing["name"] != display_name:
+                print(
+                    "[warn] Duplicate item id "
+                    f"{key!r} in {source} (note: {note}), keeping earlier value from {existing.get('source')}",
+                    file=sys.stderr,
+                )
+            return
+        mapping[key] = {
+            "name": display_name,
+            "icon": icon_path,
+            "source": f"{source}{note}",
+        }
+
     for file_path in sorted(data_root.rglob("*.MXML")):
         for entry in iter_item_entries(file_path):
             icon_path = normalise_icon_path(entry.icon_filename, icons_root)
             if not icon_path:
                 continue
 
-            display_name = resolve_name(entry.name_token, localisation) or entry.name_token or entry.item_id
-            item_id = entry.item_id.upper()
-            existing = mapping.get(item_id)
-            if existing:
-                if existing["icon"] != icon_path or existing["name"] != display_name:
-                    print(
-                        "[warn] Duplicate item id "
-                        f"{item_id!r} in {file_path}, keeping earlier value from {existing.get('source')}",
-                        file=sys.stderr,
-                    )
-                continue
+            display_name = (
+                resolve_name(entry.name_token, localisation)
+                or entry.name_token
+                or entry.item_id
+            )
+            register(entry.item_id, display_name, icon_path, entry.source_file)
 
-            mapping[item_id] = {
-                "name": display_name,
-                "icon": icon_path,
-                "source": str(entry.source_file),
-            }
+            alias = (entry.deploys_into or "").strip()
+            if alias:
+                if alias.upper() not in mapping:
+                    register(alias, display_name, icon_path, entry.source_file, " (deploys-into)")
 
     # Drop the debugging source field before returning a clean map.
-    return {item_id: {"name": data["name"], "icon": data["icon"]} for item_id, data in mapping.items()}
+    return {
+        item_id: {"name": data["name"], "icon": data["icon"]}
+        for item_id, data in mapping.items()
+    }
 
 
 def main() -> None:
@@ -261,7 +288,11 @@ def main() -> None:
     localisation = collect_localisation(args.data_root, args.language, args.fallback)
     item_map = build_item_map(args.data_root, args.icons_root, localisation)
 
-    json_kwargs = {"indent": 2, "sort_keys": True} if args.pretty else {"separators": (",", ":"), "sort_keys": True}
+    json_kwargs = (
+        {"indent": 2, "sort_keys": True}
+        if args.pretty
+        else {"separators": (",", ":"), "sort_keys": True}
+    )
     json_output = json.dumps(item_map, **json_kwargs)
 
     if args.output:

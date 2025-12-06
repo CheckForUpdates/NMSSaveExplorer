@@ -27,7 +27,24 @@ public class ShipInventoryController extends BaseInventoryController {
         return valid != null ? valid : new JsonArray();
     }
 
-    private JsonObject resolveShipInventory(JsonObject root) {
+    protected JsonObject resolveShipInventory(JsonObject root) {
+        JsonObject ship = resolveShipOwner(root);
+        if (ship == null) {
+            return null;
+        }
+        JsonObject inventory = null;
+        if (ship.has(":No")) {
+            inventory = ship;
+        } else if (ship.has(";l5")) {
+            inventory = ship.getAsJsonObject(";l5");
+        }
+        if (hasSlots(inventory)) {
+            return inventory;
+        }
+        return inventory;
+    }
+
+    protected JsonObject resolveShipOwner(JsonObject root) {
         try {
             JsonObject base = root.getAsJsonObject("vLc");
             if (base == null) return null;
@@ -37,15 +54,21 @@ public class ShipInventoryController extends BaseInventoryController {
             JsonArray ownership = player.getAsJsonArray("@Cs");
             if (ownership != null && ownership.size() > 0) {
                 int activeIndex = player.has("aBE") ? player.get("aBE").getAsInt() : 0;
-                JsonObject active = extractInventoryFromOwnership(ownership, activeIndex);
-                if (active != null && hasSlots(active)) {
-                    return active;
+                JsonObject active = extractShipFromOwnership(ownership, activeIndex);
+                if (active != null) {
+                    JsonObject inventory = active.getAsJsonObject(";l5");
+                    if (hasSlots(inventory)) {
+                        return active;
+                    }
                 }
                 // Fallback: first ship with any slots.
                 for (JsonElement element : ownership) {
-                    JsonObject candidate = extractInventory(element);
-                    if (candidate != null && hasSlots(candidate)) {
-                        return candidate;
+                    JsonObject candidate = extractShip(element);
+                    if (candidate != null) {
+                        JsonObject inventory = candidate.getAsJsonObject(";l5");
+                        if (hasSlots(inventory)) {
+                            return candidate;
+                        }
                     }
                 }
             }
@@ -55,30 +78,28 @@ public class ShipInventoryController extends BaseInventoryController {
             if (shipInventory != null && hasSlots(shipInventory)) {
                 return shipInventory;
             }
-            return shipInventory;
+            return null;
         } catch (Exception e) {
             return null;
         }
     }
 
-    private JsonObject extractInventoryFromOwnership(JsonArray ownership, int index) {
+    private JsonObject extractShipFromOwnership(JsonArray ownership, int index) {
         if (index < 0 || index >= ownership.size()) {
             index = 0;
         }
         JsonElement element = ownership.get(index);
-        return extractInventory(element);
+        return extractShip(element);
     }
 
-    private JsonObject extractInventory(JsonElement element) {
+    private JsonObject extractShip(JsonElement element) {
         if (element == null || !element.isJsonObject()) {
             return null;
         }
-        JsonObject owner = element.getAsJsonObject();
-        JsonObject inventory = owner.getAsJsonObject(";l5");
-        return inventory;
+        return element.getAsJsonObject();
     }
 
-    private boolean hasSlots(JsonObject inventory) {
+    protected boolean hasSlots(JsonObject inventory) {
         if (inventory == null) return false;
         JsonArray slots = inventory.getAsJsonArray(":No");
         return slots != null && slots.size() > 0;

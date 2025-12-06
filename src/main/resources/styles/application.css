@@ -1,0 +1,314 @@
+/*  */
+.root {
+  -fx-background-color: #1b1b1b;
+}
+
+/* Header */
+.status-label {
+  -fx-padding: 4 0 4 6;
+  -fx-font-weight: bold;
+}
+
+/* Inventory Editor */
+.editor-container {
+  -fx-background-color: #1e1e1e;
+}
+
+/* ScrollPane for inventory */
+.inventory-scroll {
+  -fx-background: #1e1e1e;
+  -fx-border-color: transparent;
+}
+
+/* Grid for inventory slots */
+.inventory-grid {
+  -fx-background-color: #111;
+}
+
+/* Individual inventory slot placeholder */
+.inventory-slot-placeholder {
+  -fx-border-color: #444;
+  -fx-border-width: 1;
+  -fx-background-color: #1b1b1b;
+}
+
+/* Highlighted inventory slot */
+.inventory-slot-placeholder.inventory-slot-highlight {
+  -fx-border-color: yellow;
+  -fx-border-width: 2;
+  -fx-background-color: #2e2e2e;
+}
+
+/* Inventory slot pane */
+.inventory-slot-pane {
+  -fx-background-color: #2e2e2e;
+  -fx-border-color: #666;
+  -fx-border-width: 1;
+}
+
+/* Inventory slot image */
+.inventory-slot-name {
+  -fx-fill: #f9f9f9;
+  -fx-font-weight: bold;
+  -fx-font-size: 12px;
+}
+
+/* Inventory slot amount text */
+.inventory-slot-amount {
+  -fx-fill: #f5f5f5;
+  -fx-font-size: 12px;
+}
+
+/* JSON Tree View */
+.tree-view {
+  -fx-background-color: #141414;
+  -fx-control-inner-background: #141414;
+  -fx-border-color: #2a2a2a;
+}
+
+.tree-cell {
+  -fx-background-color: transparent;
+  -fx-text-fill: #e6e6e6;
+}
+
+.tree-cell:filled:hover {
+  -fx-background-color: #232323;
+}
+
+.tree-cell:filled:selected,
+.tree-cell:filled:selected:focused {
+  -fx-background-color: #3c4b64;
+  -fx-text-fill: #ffffff;
+}
+
+.json-tree-cell-modified {
+  -fx-font-weight: bold;
+  -fx-text-fill: #ffcc80;
+}
+
+/* Code Area Styles */
+.styled-text-area .caret {
+  -fx-stroke: #bcbec4; /* caret line color */
+}
+
+/* Entire editor background */
+.code-area,
+.styled-text-area,
+.paragraph-text,
+.text-area {
+  -fx-background-color: #1e1e1e;
+  -fx-control-inner-background: #1e1e1e;
+  -fx-font-family: "Hack";
+  -fx-font-size: 13px;
+}
+
+/* Default text color */
+.text {
+  -fx-fill: #f0f0f0; /* <-- the actual rendered glyphs */
+}
+
+/* General label text */
+.label {
+  -fx-text-fill: #f4f4f4;
+}
+
+/* Line numbers and gutter */
+.lineno,
+.paragraph-box {
+  -fx-background-color: #1e1e1e;
+  -fx-text-fill: #858585;
+}
+
+/* Scrollbars */
+.virtual-flow > .scroll-bar:vertical,
+.virtual-flow > .scroll-bar:horizontal {
+  -fx-background-color: #1e1e1e;
+}
+.virtual-flow > .scroll-bar:vertical > .thumb,
+.virtual-flow > .scroll-bar:horizontal > .thumb {
+  -fx-background-color: #444444;
+}
+
+/* Normal buttons */
+.button {
+  -fx-background-color: #2e2e2e;
+  -fx-text-fill: #ffffff; /* white text */
+  -fx-font-weight: bold;
+  -fx-border-color: #555;
+  -fx-border-radius: 4;
+  -fx-background-radius: 4;
+}
+
+/* Hovered buttons */
+.button:hover {
+  -fx-background-color: #3a3a3a;
+  -fx-text-fill: #ffffff;
+}
+
+/* Pressed buttons */
+.button:pressed {
+  -fx-background-color: #4a4a4a;
+  -fx-text-fill: #ffffff;
+}
+
+/* Disabled buttons (grayed out but readable) */
+.button:disabled {
+  -fx-opacity: 1; /* prevent default fade-out */
+  -fx-background-color: #2e2e2e;
+  -fx-text-fill: #777777; /* lighter gray so text remains visible */
+}
+
+/* Expedition tab */
+.expedition-content {
+  -fx-background-color: transparent;
+}
+
+.expedition-stage {
+  -fx-background-color: #1d1d1d;
+  -fx-border-color: #333333;
+  -fx-border-radius: 8;
+  -fx-background-radius: 8;
+  -fx-padding: 12;
+}
+
+.expedition-stage-title {
+  -fx-font-size: 16px;
+  -fx-font-weight: bold;
+  -fx-text-fill: #f4f4f4;
+}
+
+.expedition-stage-empty {
+  -fx-text-fill: #bbbbbb;
+  -fx-font-style: italic;
+}
+
+.expedition-grid {
+  -fx-padding: 6 0 0 0;
+}
+
+.expedition-header {
+  -fx-font-weight: bold;
+  -fx-text-fill: #c7c7c7;
+}
+
+.expedition-mission-name {
+  -fx-text-fill: #f0f0f0;
+}
+
+.expedition-amount {
+  -fx-text-fill: #dcdcdc;
+  -fx-font-family: "Consolas", "Hack", "Monaco", monospace;
+}
+
+.expedition-progress-field {
+  -fx-alignment: center;
+}
+
+.expedition-icon-placeholder {
+  -fx-background-color: #2a2a2a;
+  -fx-border-color: #444444;
+  -fx-border-radius: 8;
+  -fx-background-radius: 8;
+}
+
+.expedition-icon-placeholder-symbol {
+  -fx-text-fill: #888888;
+  -fx-font-size: 18px;
+}
+
+/* Tab styling for readability */
+.tab-pane .tab-header-area {
+  -fx-background-color: #1c1c1c;
+}
+
+.tab-pane .tab {
+  -fx-background-color: #2a2a2a;
+}
+
+.tab-pane .tab:selected {
+  -fx-background-color: #3d3d3d;
+}
+
+.tab-pane .tab-label {
+  -fx-text-fill: #f4f6ff;
+  -fx-font-weight: 600;
+}
+
+.tab-pane .tab:selected .tab-label {
+  -fx-text-fill: #ffffff;
+  -fx-font-weight: 700;
+}
+
+/* Buttons used inside the item search dialog */
+.item-search-button {
+  -fx-text-fill: #000000;
+  -fx-font-weight: bold;
+}
+
+/* Currency editor */
+.currency-editor {
+  -fx-padding: 18;
+  -fx-spacing: 14;
+  -fx-background-color: #1a1a1a;
+}
+
+.currency-row {
+  -fx-alignment: center-left;
+  -fx-padding: 6 0;
+  -fx-spacing: 12;
+}
+
+.currency-label {
+  -fx-text-fill: #f8f8f8;
+  -fx-font-size: 14px;
+  -fx-font-weight: bold;
+}
+
+.currency-field {
+  -fx-pref-width: 180;
+  -fx-background-color: #2e2e2e;
+  -fx-text-fill: #ffffff;
+  -fx-border-color: #555555;
+  -fx-border-radius: 4;
+  -fx-background-radius: 4;
+  -fx-font-weight: bold;
+}
+
+.currency-field:focused {
+  -fx-border-color: #8bc34a;
+  -fx-effect: dropshadow(one-pass-box, rgba(139, 195, 74, 0.4), 8, 0, 0, 0);
+}
+
+.currency-icon {
+  -fx-effect: dropshadow(one-pass-box, rgba(0, 0, 0, 0.5), 6, 0, 0, 0);
+}
+
+/* Alternating / striped row colors example
+   JavaFX provides :odd and :even pseudo-classes for row/cell nodes.
+   Add or adjust these rules to change the list/table/tree striping. */
+.list-cell:odd,
+.table-row-cell:odd,
+.tree-cell:odd {
+  -fx-background-color: #141414; /* darker stripe */
+}
+
+.list-cell:even,
+.table-row-cell:even,
+.tree-cell:even {
+  -fx-background-color: #1a1a1a; /* lighter stripe */
+}
+
+/* Keep selection styling readable — adjust color to taste. */
+.list-cell:selected,
+.table-row-cell:selected,
+.tree-cell:selected,
+.list-cell:selected:focused,
+.table-row-cell:selected:focused,
+.tree-cell:selected:focused {
+  -fx-background-color: #3c4b64; /* selected row color */
+  -fx-text-fill: #ffffff;
+}
+
+/* If you add custom cell factories that set background to transparent,
+   ensure the cell still allows these pseudo-classes or add style classes
+   in the factory to reproduce similar striping programmatically. */

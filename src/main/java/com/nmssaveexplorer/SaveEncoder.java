@@ -22,7 +22,7 @@ public class SaveEncoder {
      * Preserves the original header if present and uses fixed 64 KB padded blocks.
      */
     public static void encodeSave(File saveFile, JsonObject saveData) throws IOException {
-        // 1️⃣ Read the original file (to preserve header if any)
+        // Read the original file (to preserve header if any)
         byte[] original = Files.readAllBytes(saveFile.toPath());
         int headerEnd = findHeaderEnd(original);
 
@@ -48,16 +48,16 @@ public class SaveEncoder {
             System.out.println("[Encoder] Header length: 0 (none)");
         }
 
-        // 2️⃣ Serialize JSON compactly (no pretty-printing)
+        // Serialize JSON compactly (no pretty-printing)
         String json = new Gson().toJson(saveData);
         byte[] input = json.getBytes(StandardCharsets.UTF_8);
         System.out.println("[Encoder] JSON byte length: " + input.length);
 
-        // 3️⃣ Initialize LZ4 compressor
+        // Initialize LZ4 compressor
         LZ4Factory factory = LZ4Factory.fastestInstance();
         LZ4Compressor compressor = factory.fastCompressor();
 
-        // 4️⃣ Write header + compressed blocks
+        // Write header + compressed blocks
         try (BufferedOutputStream bos =
                      new BufferedOutputStream(new FileOutputStream(saveFile))) {
 
@@ -90,7 +90,7 @@ public class SaveEncoder {
             bos.flush();
         }
 
-        // 5️⃣ Debug final stats
+        // Debug final stats
         System.out.println("[Encoder] Final file size: " + saveFile.length());
         System.out.println("[Encoder] Finished encoding: " + saveFile.getName());
     }
@@ -120,6 +120,6 @@ public class SaveEncoder {
                 return (i == 0) ? 0 : i;
             }
         }
-        return 0; // safe fallback
+        return 0; // MAGIC not found
     }
 }

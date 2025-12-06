@@ -1,26 +1,38 @@
 # Gradle
 .gradle/
-build/
-out/
-# IntelliJ IDEA
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDEs and editors
 .idea/
 *.iml
-# VS Code
-.vscode/*.log
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+out/
+
 # Java
 *.class
-bin/
-# Logs
-*.log
-# Generated jars
 *.jar
+hs_err_pid*
+*.hprof
+
+# Logs and archives
+*.log
+*.zip
+*.tar
+*.gz
+
 # Python
 __pycache__/
-*.pyc
-# Other
-*.DS_Store
-*.log*
-target/
 
-data/
-icons/
+# Junk
+.DS_Store
+Thumbs.db
+
+# Build and runtime outputs
+bin/
+target/

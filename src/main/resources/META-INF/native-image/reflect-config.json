@@ -1,0 +1,12 @@
+[
+  {
+    "name": "com.nmssaveexplorer.Main",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  },
+  {
+    "name": "com.nmssaveexplorer.MainMenuController",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  }
+]

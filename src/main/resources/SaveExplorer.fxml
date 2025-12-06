@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
+<?import java.net.URL?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.Menu?>
 <?import javafx.scene.control.MenuBar?>
@@ -14,6 +15,9 @@
 <?import javafx.scene.layout.VBox?>
 
 <BorderPane prefHeight="800.0" prefWidth="1400.0" xmlns:fx="http://javafx.com/fxml/1" xmlns="http://javafx.com/javafx/25" fx:controller="com.nmssaveexplorer.SaveExplorerController">
+    <stylesheets>
+        <URL value="@styles/application.css" />
+    </stylesheets>
 
     <!-- ===================== MENU BAR ===================== -->
     <top>
@@ -43,7 +47,7 @@
             </MenuBar>
 
             <ToolBar>
-                <Label fx:id="statusLabel" style="-fx-padding: 4 0 4 6; -fx-font-weight: bold;" text="Status: Ready." />
+                <Label fx:id="statusLabel" styleClass="status-label" text="Status: Ready." />
             </ToolBar>
         </VBox>
     </top>
@@ -55,7 +59,7 @@
             <TreeView fx:id="jsonTree" />
 
             <!-- RichTextFX editor container -->
-            <StackPane fx:id="editorContainer" prefHeight="671.0" prefWidth="1059.0" style="-fx-background-color: #1e1e1e;" HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS" />
+            <StackPane fx:id="editorContainer" prefHeight="671.0" prefWidth="1059.0" styleClass="editor-container" HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS" />
         </SplitPane>
     </center>
 </BorderPane>

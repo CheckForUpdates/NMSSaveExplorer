@@ -6,12 +6,19 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import com.google.gson.Gson;
@@ -20,16 +27,25 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSyntaxException;
 import com.nmssaveexplorer.inventory.BaseInventoryController;
 import com.nmssaveexplorer.inventory.ExosuitInventoryController;
 import com.nmssaveexplorer.inventory.ExosuitTechController;
 import com.nmssaveexplorer.inventory.MultitoolInventoryController;
+import com.nmssaveexplorer.inventory.MultitoolTechInventoryController;
 import com.nmssaveexplorer.inventory.ShipInventoryController;
+import com.nmssaveexplorer.inventory.ShipTechInventoryController;
 import com.nmssaveexplorer.registry.IconRegistry;
-import com.nmssaveexplorer.registry.ItemNameRegistry;
+import com.nmssaveexplorer.registry.ItemCatalog;
+import com.nmssaveexplorer.registry.ItemDefinitionRegistry;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
+import javafx.beans.binding.Bindings;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
+import javafx.collections.transformation.SortedList;
 import javafx.fxml.FXML;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
@@ -41,21 +57,26 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
+import javafx.scene.control.TextFormatter;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.Dragboard;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
@@ -72,8 +93,11 @@ import javafx.scene.layout.RowConstraints;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
+import javafx.scene.text.TextAlignment;
 import javafx.stage.FileChooser;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import javafx.util.Duration;
 
 
@@ -96,8 +120,43 @@ public class SaveExplorerController {
     private File currentSaveFile = null;
     private TreeItem<String> currentEditedNode = null;
     private boolean inventoryModified = false;
+    private boolean usingExpeditionContext = false;
     private Stage lastInventoryStage;
+    private final Map<String, Image> expeditionIconCache = new HashMap<>();
     private static final Set<String> loggedMissingIcons = new HashSet<>();
+    private static final int INVENTORY_ICON_SIZE = 72;
+    private static final double EXPEDITION_ICON_SIZE = 48;
+    private static final String KEY_COMMON_STATE = "<h0";
+    private static final String KEY_SEASON_DATA = "Rol";
+    private static final String KEY_SEASON_STAGES = "3Mw";
+    private static final String KEY_STAGE_MILESTONES = "kr6";
+    private static final String KEY_MISSION_NAME = "p0c";
+    private static final String KEY_MISSION_AMOUNT = "1o9";
+    private static final String KEY_ICON = "DhC";
+    private static final String KEY_ICON_FILENAME = "93M";
+    private static final String KEY_SEASON_STATE = "qYy";
+    private static final String KEY_ACTIVE_CONTEXT = "XTp";
+    private static final String KEY_EXPEDITION_CONTEXT = "2YS";
+    private static final String KEY_PLAYER_STATE = "vLc";
+    private static final String CONTEXT_MAIN = "Main";
+    private static final String KEY_MILESTONE_VALUES = "psf";
+    private static final String KEY_UNITS = "wGS";
+    private static final String KEY_NANITES = "7QL";
+    private static final String KEY_QUICKSILVER = "kN;";
+    private static final String ICON_UNITS = "UNITS";
+    private static final String ICON_NANITE = "TECHFRAG";
+    private static final String ICON_QUICKSILVER = "QUICKSILVER";
+    private static final String APPLICATION_STYLESHEET =
+            Objects.requireNonNull(SaveExplorerController.class.getResource("/styles/application.css"),
+                    "Missing stylesheet /styles/application.css").toExternalForm();
+    private static final String INVENTORY_GRID_CLASS = "inventory-grid";
+    private static final String INVENTORY_PLACEHOLDER_CLASS = "inventory-slot-placeholder";
+    private static final String INVENTORY_PANE_CLASS = "inventory-slot-pane";
+    private static final String INVENTORY_NAME_CLASS = "inventory-slot-name";
+    private static final String INVENTORY_AMOUNT_CLASS = "inventory-slot-amount";
+    private static final String INVENTORY_SCROLL_CLASS = "inventory-scroll";
+    private static final String INVENTORY_HIGHLIGHT_CLASS = "inventory-slot-highlight";
+    private static final String TREE_MODIFIED_CLASS = "json-tree-cell-modified";
 
     @FXML
     private void initialize() {
@@ -106,10 +165,6 @@ public class SaveExplorerController {
         statusLabel.setText("Status: Ready.");
     }
 
-    /**
-     * ====================== INITIAL SETUP ======================
-     **/
-
     private void setupTree() {
         TreeItem<String> root = new TreeItem<>("root");
         root.getChildren().add(new TreeItem<>("Open a save file to begin."));
@@ -117,34 +172,39 @@ public class SaveExplorerController {
         jsonTree.setRoot(root);
 
         jsonTree.getSelectionModel().selectedItemProperty().addListener((obs, oldItem, newItem) -> {
-            // 🔹 When switching nodes, try to commit the old edit first
+
+            // When switching nodes, try to commit the old edit first
             if (oldItem != null && currentEditedNode == oldItem) {
                 String editedText = codeArea.getText().trim();
                 if (!editedText.isEmpty()) {
                     try {
                         JsonElement newFragment = JsonParser.parseString(editedText);
+                        JsonElement remappedFragment = remapElement(newFragment, reverseMapping);
 
                         // Compare with current JSON value; skip if identical
                         JsonElement currentValue = nodeToElementMap.get(oldItem);
-                        String newJson = new Gson().toJson(newFragment);
+                        String newJson = new Gson().toJson(remappedFragment);
                         String currentJson = (currentValue != null) ? new Gson().toJson(currentValue) : "";
 
                         if (!newJson.equals(currentJson)) {
-                            updateJsonNode(oldItem, newFragment);
+                            updateJsonNode(oldItem, remappedFragment);
                             System.out.println("[AutoCommit] Updated node before switching: " + oldItem.getValue());
                         } else {
                             System.out.println("[AutoCommit] No change detected for: " + oldItem.getValue());
                         }
                     } catch (JsonSyntaxException ex) {
-                        statusLabel.setText("❌ Invalid JSON, not applied: " + ex.getMessage());
+                        statusLabel.setText("Invalid JSON, not applied: " + ex.getMessage());
                     }
 
                 }
             }
 
             if (newItem != null) {
+                currentEditedNode = null; // Prevent codeArea listener from tagging the old node during UI refresh
                 showJsonForItem(newItem);
                 currentEditedNode = newItem;
+            } else {
+                currentEditedNode = null;
             }
 
             if (newItem != null) {
@@ -163,13 +223,16 @@ public class SaveExplorerController {
                     if (empty || item == null) {
                         setText(null);
                         setContextMenu(null);
+                        getStyleClass().remove(TREE_MODIFIED_CLASS);
                     } else {
                         setText(item);
                         TreeItem<String> treeItem = getTreeItem();
                         if (modifiedNodes.contains(treeItem)) {
-                            setStyle("-fx-font-weight: bold;");
+                            if (!getStyleClass().contains(TREE_MODIFIED_CLASS)) {
+                                getStyleClass().add(TREE_MODIFIED_CLASS);
+                            }
                         } else {
-                            setStyle("");
+                            getStyleClass().remove(TREE_MODIFIED_CLASS);
                         }
                         ContextMenu menu = new ContextMenu();
                         MenuItem revertItem = new MenuItem("Undo Change");
@@ -189,7 +252,7 @@ public class SaveExplorerController {
         codeArea.setWrapText(false);
         codeArea.setEditable(true);
         codeArea.getStylesheets().add(
-                getClass().getResource("/editor.css").toExternalForm()
+                getClass().getResource("/styles/editor.css").toExternalForm()
         );
         org.fxmisc.flowless.VirtualizedScrollPane<CodeArea> vsPane =
                 new org.fxmisc.flowless.VirtualizedScrollPane<>(codeArea);
@@ -257,13 +320,77 @@ public class SaveExplorerController {
         rootJsonElement = JsonParser.parseString(content);
         this.rootJsonElement = rootJsonElement;
         this.currentSaveFile = file;
+        updateActivePlayerContext(rootJsonElement.getAsJsonObject());
         populateJsonTree(rootJsonElement, file.getName());
         modifiedNodes.clear();
-        showTemporaryStatus("Loaded: " + file.getName());
+        showTemporaryStatus("Loaded: " + file.getName() + " (" + currentContextLabel() + ")");
     }
 
     public boolean hasLoadedSave() {
         return rootJsonElement != null && currentSaveFile != null;
+    }
+
+    private void updateActivePlayerContext(JsonObject root) {
+        usingExpeditionContext = shouldUseExpeditionContext(root);
+        System.out.println("[Context] Active=" + (root != null && root.has(KEY_ACTIVE_CONTEXT)
+                ? root.get(KEY_ACTIVE_CONTEXT).getAsString()
+                : "unknown")
+                + " usingExpedition=" + usingExpeditionContext);
+    }
+
+    private boolean shouldUseExpeditionContext(JsonObject root) {
+        if (root == null || !root.has(KEY_EXPEDITION_CONTEXT)) {
+            return false;
+        }
+        JsonElement contextElement = root.get(KEY_ACTIVE_CONTEXT);
+        String contextValue = contextElement != null && contextElement.isJsonPrimitive()
+                ? contextElement.getAsString()
+                : "";
+        if (contextValue == null) {
+            contextValue = "";
+        }
+        String normalized = contextValue.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty() || normalized.equals(CONTEXT_MAIN.toLowerCase(Locale.ROOT))) {
+            return false;
+        }
+        JsonObject expedition = root.getAsJsonObject(KEY_EXPEDITION_CONTEXT);
+        return expedition != null && expedition.has("6f=");
+    }
+
+    private JsonObject resolveInventoryRoot(JsonObject root) {
+        if (!usingExpeditionContext || root == null) {
+            return root;
+        }
+        JsonObject expedition = root.getAsJsonObject(KEY_EXPEDITION_CONTEXT);
+        if (expedition == null) {
+            return root;
+        }
+        JsonObject wrapper = new JsonObject();
+        wrapper.add(KEY_PLAYER_STATE, expedition);
+        return wrapper;
+    }
+
+    private String currentContextLabel() {
+        return usingExpeditionContext ? "Expedition" : "Primary";
+    }
+
+    private JsonObject getActivePlayerState(JsonObject root) {
+        if (root == null) {
+            return null;
+        }
+        if (usingExpeditionContext) {
+            JsonObject expedition = root.getAsJsonObject(KEY_EXPEDITION_CONTEXT);
+            if (expedition != null && expedition.has("6f=")) {
+                return expedition.getAsJsonObject("6f=");
+            }
+        }
+        if (root.has(KEY_PLAYER_STATE)) {
+            JsonObject base = root.getAsJsonObject(KEY_PLAYER_STATE);
+            if (base != null && base.has("6f=")) {
+                return base.getAsJsonObject("6f=");
+            }
+        }
+        return null;
     }
 
     private void ensureMappingLoaded() {
@@ -271,20 +398,18 @@ public class SaveExplorerController {
             return;
         }
 
-        try {
-            var res = getClass().getResource("/mapping.json");
-            if (res != null) {
-                File mappingFile = new File(res.toURI());
-                JsonMapper.loadMapping(mappingFile);
-                mappingLoaded = JsonMapper.isLoaded();
-                reverseMapping.clear();
-                for (Map.Entry<String, String> entry : JsonMapper.getMapping().entrySet()) {
-                    reverseMapping.put(entry.getValue(), entry.getKey());
-                }
-                System.out.println("[Mapping] Loaded " + reverseMapping.size() + " reverse entries.");
-            } else {
+        try (var stream = getClass().getResourceAsStream("/mapping.json")) {
+            if (stream == null) {
                 System.err.println("[Controller] mapping.json not found in resources.");
+                return;
             }
+            JsonMapper.loadMapping(stream);
+            mappingLoaded = JsonMapper.isLoaded();
+            reverseMapping.clear();
+            for (Map.Entry<String, String> entry : JsonMapper.getMapping().entrySet()) {
+                reverseMapping.put(entry.getValue(), entry.getKey());
+            }
+            System.out.println("[Mapping] Loaded " + reverseMapping.size() + " reverse entries.");
         } catch (Exception ex) {
             throw new RuntimeException("Failed to load mapping.json", ex);
         }
@@ -336,10 +461,6 @@ public class SaveExplorerController {
         inventoryModified = false;
     }
 
-    /**
-     * ====================== JSON MAPPING HELPERS ======================
-     **/
-
     private JsonElement mapJsonElement(JsonElement element) {
         if (element.isJsonObject()) {
             JsonObject obj = element.getAsJsonObject();
@@ -359,31 +480,35 @@ public class SaveExplorerController {
         }
     }
 
-    private JsonObject remapJson(JsonObject readable, Map<String, String> reverse) {
-        JsonObject out = new JsonObject();
-        for (Map.Entry<String, JsonElement> e : readable.entrySet()) {
-            String readableKey = e.getKey();
-            String shortKey = reverse.getOrDefault(readableKey, readableKey);
-            JsonElement val = e.getValue();
-
-            // Keep unmapped keys and nested data intact
-            if (val.isJsonObject()) {
-                out.add(shortKey, remapJson(val.getAsJsonObject(), reverse));
-            } else if (val.isJsonArray()) {
-                JsonArray arr = new JsonArray();
-                for (JsonElement x : val.getAsJsonArray()) {
-                    if (x.isJsonObject()) {
-                        arr.add(remapJson(x.getAsJsonObject(), reverse));
-                    } else {
-                        arr.add(x.deepCopy());
-                    }
-                }
-                out.add(shortKey, arr);
-            } else {
-                out.add(shortKey, val.deepCopy());
-            }
+    private JsonElement remapElement(JsonElement readable, Map<String, String> reverse) {
+        if (readable == null) {
+            return null;
         }
-        return out;
+        if (reverse == null || reverse.isEmpty()) {
+            return readable.deepCopy();
+        }
+        if (readable.isJsonObject()) {
+            JsonObject obj = readable.getAsJsonObject();
+            JsonObject out = new JsonObject();
+            for (Map.Entry<String, JsonElement> entry : obj.entrySet()) {
+                String shortKey = reverse.getOrDefault(entry.getKey(), entry.getKey());
+                out.add(shortKey, remapElement(entry.getValue(), reverse));
+            }
+            return out;
+        }
+        if (readable.isJsonArray()) {
+            JsonArray arr = new JsonArray();
+            for (JsonElement element : readable.getAsJsonArray()) {
+                arr.add(remapElement(element, reverse));
+            }
+            return arr;
+        }
+        return readable.deepCopy();
+    }
+
+    private JsonObject remapJson(JsonObject readable, Map<String, String> reverse) {
+        JsonElement remapped = remapElement(readable, reverse);
+        return remapped != null && remapped.isJsonObject() ? remapped.getAsJsonObject() : new JsonObject();
     }
 
     private void updateJsonNode(TreeItem<String> item, JsonElement newValue) {
@@ -478,7 +603,7 @@ public class SaveExplorerController {
 
             SaveEncoder.encodeSave(currentSaveFile, encoded);
             inventoryModified = false;
-            statusLabel.setText("✅ Inventory changes saved.");
+            statusLabel.setText("Inventory changes saved.");
             clearModifiedIndicators();
             return true;
         } catch (Exception e) {
@@ -541,10 +666,6 @@ public class SaveExplorerController {
     private void onExitApp() {
         Platform.exit();
     }
-
-    /**
-     * ====================== MENU ACTIONS ======================
-     **/
 
     @FXML
     private void onExpandAll() {
@@ -725,6 +846,7 @@ public class SaveExplorerController {
 
         try {
             JsonObject root = rootJsonElement.getAsJsonObject();
+            JsonObject inventoryRoot = resolveInventoryRoot(root);
 
             Map<String, InventoryPayload> inventories = new LinkedHashMap<>();
 
@@ -732,20 +854,23 @@ public class SaveExplorerController {
                     new ExosuitInventoryController(),
                     new ExosuitTechController(),
                     new ShipInventoryController(),
-                    new MultitoolInventoryController()
+                    new ShipTechInventoryController(),
+                    new MultitoolInventoryController(),
+                    new MultitoolTechInventoryController()
             );
 
             for (BaseInventoryController controller : controllers) {
-                JsonArray slots = controller.resolveSlots(root);
-                JsonArray valid = controller.resolveValidSlots(root);
+                JsonArray slots = controller.resolveSlots(inventoryRoot);
+                JsonArray valid = controller.resolveValidSlots(inventoryRoot);
                 inventories.put(controller.inventoryName(), new InventoryPayload(slots, valid));
             }
 
             // Freighter inventory (no dedicated controller yet)
             JsonArray freighterSlots = null;
             JsonArray freighterValid = null;
-            if (root.has("vLc")) {
-                JsonObject base = root.getAsJsonObject("vLc");
+            JsonObject contextHolder = inventoryRoot != null ? inventoryRoot : root;
+            if (contextHolder != null && contextHolder.has("vLc")) {
+                JsonObject base = contextHolder.getAsJsonObject("vLc");
                 if (base.has("6f=")) {
                     JsonObject playerState = base.getAsJsonObject("6f=");
                     if (playerState.has("D3F")) {
@@ -768,7 +893,7 @@ public class SaveExplorerController {
             if (ownerStage != null) {
                 invStage.initOwner(ownerStage);
             }
-            invStage.setTitle("Inventory Editor");
+            invStage.setTitle("Inventory Editor (" + currentContextLabel() + ")");
             TabPane tabs = new TabPane();
 
             inventories.forEach((name, payload) -> {
@@ -777,7 +902,7 @@ public class SaveExplorerController {
 
                 ScrollPane scroll = new ScrollPane();
                 scroll.setFitToWidth(true);
-                scroll.setStyle("-fx-background: #1e1e1e;");
+                scroll.getStyleClass().add(INVENTORY_SCROLL_CLASS);
 
                 GridPane grid = buildInventoryGrid(name, slots, valid != null ? valid : new JsonArray());
                 scroll.setContent(grid);
@@ -792,8 +917,18 @@ public class SaveExplorerController {
                 tabs.getTabs().add(tab);
             });
 
+            Tab currencyTab = buildCurrencyTab(root);
+            if (currencyTab != null) {
+                tabs.getTabs().add(currencyTab);
+            }
+
+            Tab expeditionTab = buildExpeditionTab(root);
+            if (expeditionTab != null) {
+                tabs.getTabs().add(expeditionTab);
+            }
+
             if (tabs.getTabs().isEmpty()) {
-                statusLabel.setText("Inventories not available for display.");
+                statusLabel.setText("Nothing available for display.");
                 return;
             }
 
@@ -802,7 +937,7 @@ public class SaveExplorerController {
             saveButton.setOnAction(ev -> {
                 boolean success = saveChanges();
                 if (success) {
-                    infoLabel.setText("✅ Saved " + (currentSaveFile != null ? currentSaveFile.getName() : "changes") + ".");
+                    infoLabel.setText("Saved " + (currentSaveFile != null ? currentSaveFile.getName() : "changes") + ".");
                 } else {
                     infoLabel.setText("Save failed. Check editor status.");
                 }
@@ -826,12 +961,13 @@ public class SaveExplorerController {
             container.setBottom(footer);
 
             Scene scene = new Scene(container, 1120, 700);
+            applyApplicationStyles(scene);
             invStage.setScene(scene);
             invStage.show();
             lastInventoryStage = invStage;
             invStage.setOnHidden(e -> lastInventoryStage = null);
 
-            statusLabel.setText("Inventory editor opened (" + tabs.getTabs().size() + " categories)");
+            statusLabel.setText("Inventory editor opened (" + currentContextLabel() + ")");
         } catch (Exception e) {
             e.printStackTrace();
             statusLabel.setText("Failed to open inventory editor: " + e.getMessage());
@@ -847,11 +983,11 @@ public class SaveExplorerController {
         if (ownerStage != null) {
             stage.initOwner(ownerStage);
         }
-        stage.setTitle(name + " Inventory");
+        stage.setTitle(name + " Inventory (" + currentContextLabel() + ")");
 
         ScrollPane scrollPane = new ScrollPane();
         scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-background: #1e1e1e;");
+        scrollPane.getStyleClass().add(INVENTORY_SCROLL_CLASS);
         GridPane grid = buildInventoryGrid(name, slots, validSlotIndices != null ? validSlotIndices : new JsonArray());
         scrollPane.setContent(grid);
 
@@ -884,8 +1020,456 @@ public class SaveExplorerController {
         container.setBottom(footer);
 
         Scene scene = new Scene(container, 1120, 700);
+        applyApplicationStyles(scene);
         stage.setScene(scene);
         stage.show();
+    }
+
+    private Tab buildCurrencyTab(JsonObject root) {
+        JsonObject playerState = getActivePlayerState(root);
+        if (playerState == null) {
+            return null;
+        }
+
+        VBox content = new VBox(18);
+        content.setFillWidth(true);
+        content.getStyleClass().add("currency-editor");
+
+        GridPane grid = new GridPane();
+        grid.getStyleClass().add("currency-grid");
+        grid.setHgap(18);
+        grid.setVgap(18);
+        grid.setMaxWidth(Double.MAX_VALUE);
+
+        ColumnConstraints columnOne = new ColumnConstraints();
+        columnOne.setPercentWidth(33.3333);
+        columnOne.setHgrow(Priority.ALWAYS);
+
+        ColumnConstraints columnTwo = new ColumnConstraints();
+        columnTwo.setPercentWidth(33.3333);
+        columnTwo.setHgrow(Priority.ALWAYS);
+
+        ColumnConstraints columnThree = new ColumnConstraints();
+        columnThree.setPercentWidth(33.3334);
+        columnThree.setHgrow(Priority.ALWAYS);
+
+        grid.getColumnConstraints().addAll(columnOne, columnTwo, columnThree);
+
+        Node units = buildCurrencyRow("Units", KEY_UNITS, ICON_UNITS, playerState);
+        Node nanites = buildCurrencyRow("Nanites", KEY_NANITES, ICON_NANITE, playerState);
+        Node quicksilver = buildCurrencyRow("Quicksilver", KEY_QUICKSILVER, ICON_QUICKSILVER, playerState);
+
+        GridPane.setHgrow(units, Priority.ALWAYS);
+        GridPane.setHgrow(nanites, Priority.ALWAYS);
+        GridPane.setHgrow(quicksilver, Priority.ALWAYS);
+
+        grid.add(units, 0, 0);
+        grid.add(nanites, 0, 1);
+        grid.add(quicksilver, 0, 2);
+
+        content.getChildren().add(grid);
+        VBox.setVgrow(grid, Priority.ALWAYS);
+
+        Tab tab = new Tab("Currencies", content);
+        tab.setClosable(false);
+        return tab;
+    }
+
+    private Node buildCurrencyRow(String labelText, String jsonKey, String iconId, JsonObject playerState) {
+        HBox row = new HBox(12);
+        row.setAlignment(Pos.CENTER_LEFT);
+        row.setFillHeight(true);
+        row.setMaxWidth(Double.MAX_VALUE);
+        row.getStyleClass().add("currency-row");
+
+        Image icon = IconRegistry.getIcon(iconId);
+        if (icon != null) {
+            ImageView iconView = new ImageView(icon);
+            iconView.setFitWidth(32);
+            iconView.setFitHeight(32);
+            iconView.setPreserveRatio(true);
+            iconView.getStyleClass().add("currency-icon");
+            row.getChildren().add(iconView);
+        }
+
+        Label label = new Label(labelText);
+        label.getStyleClass().add("currency-label");
+        row.getChildren().add(label);
+
+        TextField field = new TextField(readCurrencyValue(playerState, jsonKey));
+        field.getStyleClass().add("currency-field");
+        field.setPrefColumnCount(12);
+        field.setMaxWidth(Double.MAX_VALUE);
+        UnaryOperator<TextFormatter.Change> filter = change -> {
+            String next = change.getControlNewText();
+            return next.matches("\\d{0,12}") ? change : null;
+        };
+        field.setTextFormatter(new TextFormatter<>(filter));
+        field.setOnAction(evt -> commitCurrencyChange(field, playerState, jsonKey));
+        field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+            if (!isFocused) {
+                commitCurrencyChange(field, playerState, jsonKey);
+            }
+        });
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        row.getChildren().add(spacer);
+        row.getChildren().add(field);
+        return row;
+    }
+
+    private String readCurrencyValue(JsonObject playerState, String key) {
+        if (playerState != null && playerState.has(key)) {
+            return String.valueOf(playerState.get(key).getAsLong());
+        }
+        return "0";
+    }
+
+    private void commitCurrencyChange(TextField field, JsonObject playerState, String key) {
+        if (playerState == null) {
+            return;
+        }
+        String text = field.getText();
+        if (text == null || text.isBlank()) {
+            text = "0";
+        }
+        try {
+            long value = Long.parseLong(text);
+            playerState.addProperty(key, value);
+            markInventoryDirty();
+        } catch (NumberFormatException ex) {
+            field.setText(readCurrencyValue(playerState, key));
+        }
+    }
+
+    /**
+     * ====================== EXPEDITION EDITOR ======================
+     **/
+
+    private Tab buildExpeditionTab(JsonObject root) {
+        if (root == null || !root.has(KEY_COMMON_STATE)) {
+            return null;
+        }
+
+        JsonObject commonState = root.getAsJsonObject(KEY_COMMON_STATE);
+        JsonObject seasonData = (commonState != null && commonState.has(KEY_SEASON_DATA))
+                ? commonState.getAsJsonObject(KEY_SEASON_DATA)
+                : null;
+        if (seasonData == null || !seasonData.has(KEY_SEASON_STAGES)) {
+            return null;
+        }
+
+        JsonArray stages = seasonData.getAsJsonArray(KEY_SEASON_STAGES);
+        if (stages == null || stages.isEmpty()) {
+            return null;
+        }
+
+        JsonObject seasonState = commonState.has(KEY_SEASON_STATE)
+                ? commonState.getAsJsonObject(KEY_SEASON_STATE)
+                : new JsonObject();
+        if (!commonState.has(KEY_SEASON_STATE)) {
+            commonState.add(KEY_SEASON_STATE, seasonState);
+        }
+
+        int totalMilestones = 0;
+        for (JsonElement stageElement : stages) {
+            if (!stageElement.isJsonObject()) {
+                continue;
+            }
+            JsonObject stageObj = stageElement.getAsJsonObject();
+            JsonArray stageMilestones = stageObj.has(KEY_STAGE_MILESTONES)
+                    ? stageObj.getAsJsonArray(KEY_STAGE_MILESTONES)
+                    : null;
+            if (stageMilestones != null) {
+                totalMilestones += stageMilestones.size();
+            }
+        }
+        if (totalMilestones == 0) {
+            return null;
+        }
+
+        JsonArray milestoneValues = seasonState.has(KEY_MILESTONE_VALUES)
+                ? seasonState.getAsJsonArray(KEY_MILESTONE_VALUES)
+                : new JsonArray();
+        ensureMilestoneCapacity(milestoneValues, totalMilestones);
+        seasonState.add(KEY_MILESTONE_VALUES, milestoneValues);
+
+        VBox content = new VBox(18);
+        content.setPadding(new Insets(16));
+        content.getStyleClass().add("expedition-content");
+
+        int milestoneOffset = 0;
+        for (int stageIdx = 0; stageIdx < Math.min(5, stages.size()); stageIdx++) {
+            JsonElement stageElement = stages.get(stageIdx);
+            if (!stageElement.isJsonObject()) {
+                continue;
+            }
+            JsonObject stageObj = stageElement.getAsJsonObject();
+            JsonArray stageMilestones = stageObj.has(KEY_STAGE_MILESTONES)
+                    ? stageObj.getAsJsonArray(KEY_STAGE_MILESTONES)
+                    : null;
+            Node stageSection = buildStageSection(stageObj, stageMilestones, stageIdx, milestoneValues, milestoneOffset);
+            content.getChildren().add(stageSection);
+            if (stageMilestones != null) {
+                milestoneOffset += stageMilestones.size();
+            }
+        }
+
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.getStyleClass().add(INVENTORY_SCROLL_CLASS);
+
+        Tab tab = new Tab("Expedition", scrollPane);
+        tab.setClosable(false);
+        return tab;
+    }
+
+    private void ensureMilestoneCapacity(JsonArray values, int requiredSize) {
+        if (values == null) {
+            return;
+        }
+        while (values.size() < requiredSize) {
+            values.add(0);
+        }
+    }
+
+    private Node buildStageSection(JsonObject stageObj, JsonArray stageMilestones, int stageIndex,
+            JsonArray milestoneValues, int milestoneOffset) {
+        VBox stageBox = new VBox(8);
+        stageBox.getStyleClass().add("expedition-stage");
+
+        String stageName = stageObj != null && stageObj.has("8wT")
+                ? formatExpeditionToken(stageObj.get("8wT").getAsString())
+                : "";
+        String titleText = "Stage " + (stageIndex + 1);
+        if (!stageName.isBlank()) {
+            titleText += " – " + stageName;
+        }
+        Label title = new Label(titleText);
+        title.getStyleClass().add("expedition-stage-title");
+        stageBox.getChildren().add(title);
+
+        if (stageMilestones == null || stageMilestones.isEmpty()) {
+            Label empty = new Label("No missions found for this stage.");
+            empty.getStyleClass().add("expedition-stage-empty");
+            stageBox.getChildren().add(empty);
+            return stageBox;
+        }
+
+        GridPane grid = new GridPane();
+        grid.getStyleClass().add("expedition-grid");
+        grid.setHgap(12);
+        grid.setVgap(8);
+
+        ColumnConstraints iconCol = new ColumnConstraints(EXPEDITION_ICON_SIZE + 12);
+        iconCol.setHalignment(HPos.CENTER);
+        ColumnConstraints nameCol = new ColumnConstraints();
+        nameCol.setHgrow(Priority.ALWAYS);
+        ColumnConstraints amountCol = new ColumnConstraints(120);
+        amountCol.setHalignment(HPos.CENTER);
+        ColumnConstraints valueCol = new ColumnConstraints(120);
+        valueCol.setHalignment(HPos.CENTER);
+        ColumnConstraints doneCol = new ColumnConstraints(80);
+        doneCol.setHalignment(HPos.CENTER);
+        grid.getColumnConstraints().addAll(iconCol, nameCol, amountCol, valueCol, doneCol);
+
+        Label missionHeader = new Label("Mission");
+        missionHeader.getStyleClass().add("expedition-header");
+        grid.add(missionHeader, 1, 0);
+        Label goalHeader = new Label("Goal");
+        goalHeader.getStyleClass().add("expedition-header");
+        grid.add(goalHeader, 2, 0);
+        Label progressHeader = new Label("Progress");
+        progressHeader.getStyleClass().add("expedition-header");
+        grid.add(progressHeader, 3, 0);
+        Label doneHeader = new Label("Done");
+        doneHeader.getStyleClass().add("expedition-header");
+        grid.add(doneHeader, 4, 0);
+
+        for (int i = 0; i < stageMilestones.size(); i++) {
+            JsonElement milestoneElement = stageMilestones.get(i);
+            if (!milestoneElement.isJsonObject()) {
+                continue;
+            }
+            JsonObject milestone = milestoneElement.getAsJsonObject();
+            int rowIndex = i + 1;
+            int milestoneIndex = milestoneOffset + i;
+
+            Node iconNode = buildMilestoneIconNode(milestone);
+            grid.add(iconNode, 0, rowIndex);
+
+            String missionName = milestone.has(KEY_MISSION_NAME)
+                    ? formatExpeditionToken(milestone.get(KEY_MISSION_NAME).getAsString())
+                    : "Mission " + (i + 1);
+            Label missionLabel = new Label(missionName);
+            missionLabel.getStyleClass().add("expedition-mission-name");
+            grid.add(missionLabel, 1, rowIndex);
+
+            double goalValue = milestone.has(KEY_MISSION_AMOUNT)
+                    ? milestone.get(KEY_MISSION_AMOUNT).getAsDouble()
+                    : 0;
+            Label amountLabel = new Label(formatQuantity(goalValue));
+            amountLabel.getStyleClass().add("expedition-amount");
+            grid.add(amountLabel, 2, rowIndex);
+
+            CheckBox doneCheck = new CheckBox();
+            doneCheck.setAllowIndeterminate(false);
+            doneCheck.getStyleClass().add("expedition-done-check");
+
+            final boolean[] updatingDone = {false};
+            Consumer<Double> doneUpdater = newValue -> {
+                boolean complete = Double.compare(newValue, goalValue) == 0;
+                updatingDone[0] = true;
+                doneCheck.setSelected(complete);
+                updatingDone[0] = false;
+            };
+
+            TextField progressField = createProgressField(milestoneValues, milestoneIndex, doneUpdater);
+            grid.add(progressField, 3, rowIndex);
+
+            doneCheck.selectedProperty().addListener((obs, wasSelected, isSelected) -> {
+                if (updatingDone[0]) {
+                    return;
+                }
+                if (isSelected) {
+                    progressField.setText(formatQuantity(goalValue));
+                    double updated = commitMilestoneValue(milestoneValues, milestoneIndex, progressField);
+                    doneUpdater.accept(updated);
+                }
+            });
+            grid.add(doneCheck, 4, rowIndex);
+        }
+
+        stageBox.getChildren().add(grid);
+        return stageBox;
+    }
+
+    private TextField createProgressField(JsonArray milestoneValues, int index, Consumer<Double> postCommit) {
+        double storedValue = getMilestoneValue(milestoneValues, index);
+        TextField field = new TextField(formatQuantity(storedValue));
+        field.setPrefWidth(80);
+        field.getStyleClass().add("expedition-progress-field");
+        field.setTextFormatter(new TextFormatter<>(change -> {
+            String next = change.getControlNewText();
+            return next.matches("\\d{0,7}") ? change : null;
+        }));
+
+        Runnable commit = () -> {
+            double updated = commitMilestoneValue(milestoneValues, index, field);
+            if (postCommit != null) {
+                postCommit.accept(updated);
+            }
+        };
+        field.focusedProperty().addListener((obs, oldFocus, newFocus) -> {
+            if (!newFocus) {
+                commit.run();
+            }
+        });
+        field.setOnAction(evt -> commit.run());
+        if (postCommit != null) {
+            postCommit.accept(storedValue);
+        }
+        return field;
+    }
+
+    private double commitMilestoneValue(JsonArray milestoneValues, int index, TextField field) {
+        if (milestoneValues == null || index < 0 || index >= milestoneValues.size()) {
+            return 0;
+        }
+        double currentValue = milestoneValues.get(index).getAsDouble();
+        String text = field.getText().trim();
+        if (text.isEmpty()) {
+            field.setText(formatQuantity(currentValue));
+            return currentValue;
+        }
+        try {
+            int parsed = Integer.parseInt(text);
+            if (Double.compare(currentValue, parsed) != 0) {
+                milestoneValues.set(index, new JsonPrimitive(parsed));
+                currentValue = parsed;
+                inventoryModified = true;
+                statusLabel.setText("Expedition progress updated — remember to Save!");
+            }
+            field.setText(formatQuantity(currentValue));
+            return currentValue;
+        } catch (NumberFormatException ex) {
+            field.setText(formatQuantity(currentValue));
+        }
+        return currentValue;
+    }
+
+    private double getMilestoneValue(JsonArray milestoneValues, int index) {
+        if (milestoneValues == null || index < 0 || index >= milestoneValues.size()) {
+            return 0;
+        }
+        return milestoneValues.get(index).getAsDouble();
+    }
+
+    private Node buildMilestoneIconNode(JsonObject milestone) {
+        String iconFilename = null;
+        if (milestone != null && milestone.has(KEY_ICON)) {
+            JsonObject iconObj = milestone.getAsJsonObject(KEY_ICON);
+            if (iconObj != null && iconObj.has(KEY_ICON_FILENAME)) {
+                iconFilename = iconObj.get(KEY_ICON_FILENAME).getAsString();
+            }
+        }
+        Image icon = loadExpeditionIcon(iconFilename);
+        if (icon != null) {
+            ImageView imageView = new ImageView(icon);
+            imageView.setFitWidth(EXPEDITION_ICON_SIZE);
+            imageView.setFitHeight(EXPEDITION_ICON_SIZE);
+            imageView.setPreserveRatio(true);
+            return imageView;
+        }
+        StackPane placeholder = new StackPane();
+        placeholder.setPrefSize(EXPEDITION_ICON_SIZE, EXPEDITION_ICON_SIZE);
+        placeholder.getStyleClass().add("expedition-icon-placeholder");
+        Label symbol = new Label("◆");
+        symbol.getStyleClass().add("expedition-icon-placeholder-symbol");
+        placeholder.getChildren().add(symbol);
+        return placeholder;
+    }
+
+    private Image loadExpeditionIcon(String iconFilename) {
+        if (iconFilename == null || iconFilename.isBlank()) {
+            return null;
+        }
+        String normalised = iconFilename.replace('\\', '/');
+        int lastSlash = normalised.lastIndexOf('/');
+        String leafName = lastSlash >= 0 ? normalised.substring(lastSlash + 1) : normalised;
+        String pngName = leafName.replace(".DDS", ".png").replace(".dds", ".png");
+        if (pngName.isBlank()) {
+            return null;
+        }
+        String resourcePath = "/icons/expedition/" + pngName.toLowerCase(Locale.ROOT);
+        return expeditionIconCache.computeIfAbsent(resourcePath, key -> {
+            var stream = getClass().getResourceAsStream(key);
+            if (stream == null) {
+                return null;
+            }
+            return new Image(stream, EXPEDITION_ICON_SIZE, EXPEDITION_ICON_SIZE, true, true);
+        });
+    }
+
+    private String formatExpeditionToken(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        String value = raw.startsWith("^") ? raw.substring(1) : raw;
+        value = value.replace('_', ' ').trim();
+        if (value.isEmpty()) {
+            return raw;
+        }
+        return value;
+    }
+
+    private String formatQuantity(double value) {
+        double rounded = Math.rint(value);
+        if (Math.abs(value - rounded) < 0.0001) {
+            return Long.toString(Math.round(rounded));
+        }
+        return Double.toString(value);
     }
 
     /**
@@ -939,14 +1523,13 @@ public class SaveExplorerController {
         grid.setHgap(1);
         grid.setVgap(1);
         grid.setAlignment(Pos.TOP_LEFT);
-        grid.setStyle("-fx-background-color:#111;");
+        grid.getStyleClass().add(INVENTORY_GRID_CLASS);
 
         final int CELL_SIZE = 100;
         final int GRID_WIDTH = 10;
 
-        // ---------------------------------------------------------
-        // 1️⃣ Determine grid height
-        // ---------------------------------------------------------
+
+        // Determine grid height
         int maxY = 0;
         for (JsonElement elem : validSlotIndices) {
             if (!elem.isJsonObject()) continue;
@@ -963,9 +1546,7 @@ public class SaveExplorerController {
             }
         }
 
-        // ---------------------------------------------------------
-        // 2️⃣ Lock row/column constraints
-        // ---------------------------------------------------------
+        // Lock row/column constraints
         grid.getColumnConstraints().clear();
         grid.getRowConstraints().clear();
 
@@ -983,23 +1564,22 @@ public class SaveExplorerController {
             grid.getRowConstraints().add(rc);
         }
 
-        // ---------------------------------------------------------
-        // 3️⃣ Draw base grid
-        // ---------------------------------------------------------
+        // Draw base grid
         for (int y = 0; y <= maxY; y++) {
             for (int x = 0; x < GRID_WIDTH; x++) {
                 StackPane slot = new StackPane();
                 slot.setPrefSize(CELL_SIZE, CELL_SIZE);
                 slot.setMinSize(CELL_SIZE, CELL_SIZE);
                 slot.setMaxSize(CELL_SIZE, CELL_SIZE);
-                slot.setStyle("-fx-border-color:#444; -fx-border-width:1; -fx-background-color:#1b1b1b;");
+                slot.getStyleClass().add(INVENTORY_PLACEHOLDER_CLASS);
+                final int cx = x;
+                final int cy = y;
+                attachSlotContextMenu(slot, title, grid, slotsArray, validSlotIndices, cx, cy);
                 grid.add(slot, x, y);
             }
         }
 
-        // ---------------------------------------------------------
-        // 4️⃣ Add items
-        // ---------------------------------------------------------
+        // Add items
         for (int i = 0; i < slotsArray.size(); i++) {
             JsonObject item = slotsArray.get(i).getAsJsonObject();
             JsonObject idx = item.has("3ZH") ? item.getAsJsonObject("3ZH") : null;
@@ -1011,7 +1591,7 @@ public class SaveExplorerController {
             cell.setPrefSize(CELL_SIZE, CELL_SIZE);
             cell.setMinSize(CELL_SIZE, CELL_SIZE);
             cell.setMaxSize(CELL_SIZE, CELL_SIZE);
-            cell.setStyle("-fx-background-color:#2e2e2e; -fx-border-color:#666; -fx-border-width:1;");
+            cell.getStyleClass().add(INVENTORY_PANE_CLASS);
 
             //JsonObject typeObj = item.has("Vn8") ? item.getAsJsonObject("Vn8") : null;
             //String type = (typeObj != null && typeObj.has("elv")) ? typeObj.get("elv").getAsString() : "Unknown";
@@ -1019,18 +1599,16 @@ public class SaveExplorerController {
             int amount = item.has("1o9") ? item.get("1o9").getAsInt() : 1;
             int max = item.has("F9q") ? item.get("F9q").getAsInt() : 0;
 
-            String displayName = ItemNameRegistry.getDisplayName(id);
-            Text nameText = new Text(displayName != null ? displayName : id);
-            nameText.setStyle("-fx-fill:#fff; -fx-font-weight:bold; -fx-font-size:11;");
-            Text idText = null;
-            // if (displayName != null && !displayName.equals(id)) {
-            //     idText = new Text(id);
-            //     idText.setStyle("-fx-fill:#888; -fx-font-size:9;");
-            // }
+            String displayName = ItemDefinitionRegistry.getDisplayName(id);
+            if (displayName == null || displayName.isBlank()) {
+                displayName = formatDisplayName(id);
+            }
+            Text nameText = new Text(displayName);
+            nameText.setTextAlignment(TextAlignment.CENTER);
+            nameText.getStyleClass().add(INVENTORY_NAME_CLASS);
+            nameText.setVisible(false);
             Text amountText = new Text(amount + (max > 0 ? "/" + max : ""));
-            amountText.setStyle("-fx-fill:#ccc; -fx-font-size:10;");
-            //Text typeText = new Text(type);
-            //typeText.setStyle("-fx-fill:#aaa; -fx-font-size:9;");
+            amountText.getStyleClass().add(INVENTORY_AMOUNT_CLASS);
 
             VBox content = new VBox();
             content.setAlignment(Pos.CENTER);
@@ -1042,24 +1620,29 @@ public class SaveExplorerController {
             }
             if (icon != null) {
                 ImageView imageView = new ImageView(icon);
-                imageView.setFitWidth(48);
-                imageView.setFitHeight(48);
+                imageView.setFitWidth(INVENTORY_ICON_SIZE);
+                imageView.setFitHeight(INVENTORY_ICON_SIZE);
                 imageView.setPreserveRatio(true);
                 content.getChildren().add(imageView);
             } else if (loggedMissingIcons.add(id)) {
                 System.err.println("[InventoryIcon] Missing icon for " + id);
             }
-            content.getChildren().add(nameText);
-            if (idText != null) {
-                content.getChildren().add(idText);
-            }
-            //content.getChildren().addAll(amountText, typeText);
-            content.getChildren().addAll(amountText);
-            cell.setCenter(content);
+            content.getChildren().add(amountText);
 
-            Tooltip tooltip = new Tooltip(item.toString());
-            tooltip.setStyle("-fx-font-size:11; -fx-background-color:#333; -fx-text-fill:white;");
-            Tooltip.install(cell, tooltip);
+            StackPane nameLayer = new StackPane(nameText);
+            nameLayer.setMouseTransparent(true);
+            nameLayer.setPickOnBounds(false);
+            nameLayer.setVisible(false);
+            StackPane.setAlignment(nameText, Pos.TOP_CENTER);
+            StackPane.setAlignment(nameLayer, Pos.TOP_CENTER);
+
+            StackPane layeredContent = new StackPane(content, nameLayer);
+            cell.setCenter(layeredContent);
+
+            cell.hoverProperty().addListener((obs, wasHovering, isHovering) -> {
+                nameLayer.setVisible(isHovering);
+                nameText.setVisible(isHovering);
+            });
 
             final int startX = x;
             final int startY = y;
@@ -1079,10 +1662,13 @@ public class SaveExplorerController {
             Node existing = getNodeFromGrid(grid, x, y);
             if (existing instanceof StackPane sp) {
                 sp.getChildren().setAll(cell);
+                bindSlotContextMenu(sp, cell);
             } else {
                 StackPane sp = new StackPane(cell);
                 sp.setPrefSize(CELL_SIZE, CELL_SIZE);
-                sp.setStyle("-fx-border-color:#444; -fx-border-width:1;");
+                sp.getStyleClass().add(INVENTORY_PLACEHOLDER_CLASS);
+                 attachSlotContextMenu(sp, title, grid, slotsArray, validSlotIndices, x, y);
+                 bindSlotContextMenu(sp, cell);
                 grid.add(sp, x, y);
             }
         }
@@ -1160,7 +1746,7 @@ public class SaveExplorerController {
         }
     }
 
-    /** Refresh grid visuals in place (no rebuild, no resizing bugs). */
+    // Refresh grid visuals in place (no rebuild, no resizing bugs).
     private void refreshGridContents(GridPane grid, String title, JsonArray slotsArray, JsonArray validSlotIndices) {
         final int CELL_SIZE = 100;
         final int GRID_WIDTH = 10;
@@ -1172,7 +1758,10 @@ public class SaveExplorerController {
                 sp.setPrefSize(CELL_SIZE, CELL_SIZE);
                 sp.setMinSize(CELL_SIZE, CELL_SIZE);
                 sp.setMaxSize(CELL_SIZE, CELL_SIZE);
-                sp.setStyle("-fx-border-color:#444; -fx-border-width:1; -fx-background-color:#1b1b1b;");
+                if (!sp.getStyleClass().contains(INVENTORY_PLACEHOLDER_CLASS)) {
+                    sp.getStyleClass().add(INVENTORY_PLACEHOLDER_CLASS);
+                }
+                sp.getStyleClass().remove(INVENTORY_HIGHLIGHT_CLASS);
             }
         }
 
@@ -1189,7 +1778,7 @@ public class SaveExplorerController {
             cell.setPrefSize(CELL_SIZE, CELL_SIZE);
             cell.setMinSize(CELL_SIZE, CELL_SIZE);
             cell.setMaxSize(CELL_SIZE, CELL_SIZE);
-            cell.setStyle("-fx-background-color:#2e2e2e; -fx-border-color:#666; -fx-border-width:1;");
+            cell.getStyleClass().add(INVENTORY_PANE_CLASS);
 
             //JsonObject typeObj = item.has("Vn8") ? item.getAsJsonObject("Vn8") : null;
             //String type = (typeObj != null && typeObj.has("elv")) ? typeObj.get("elv").getAsString() : "Unknown";
@@ -1197,18 +1786,17 @@ public class SaveExplorerController {
             int amount = item.has("1o9") ? item.get("1o9").getAsInt() : 1;
             int max = item.has("F9q") ? item.get("F9q").getAsInt() : 0;
 
-            String displayName = ItemNameRegistry.getDisplayName(id);
-            Text nameText = new Text(displayName != null ? displayName : id);
-            nameText.setStyle("-fx-fill:#fff; -fx-font-weight:bold; -fx-font-size:11;");
-            Text idText = null;
-            // if (displayName != null && !displayName.equals(id)) {
-            //     idText = new Text(id);
-            //     idText.setStyle("-fx-fill:#888; -fx-font-size:9;");
-            // }
+            String displayName = ItemDefinitionRegistry.getDisplayName(id);
+            if (displayName == null || displayName.isBlank()) {
+                displayName = formatDisplayName(id);
+            }
+
+            Text nameText = new Text(displayName);
+            nameText.setTextAlignment(TextAlignment.CENTER);
+            nameText.getStyleClass().add(INVENTORY_NAME_CLASS);
+            nameText.setVisible(false);
             Text amountText = new Text(amount + (max > 0 ? "/" + max : ""));
-            amountText.setStyle("-fx-fill:#ccc; -fx-font-size:10;");
-            //Text typeText = new Text(type);
-            //typeText.setStyle("-fx-fill:#aaa; -fx-font-size:9;");
+            amountText.getStyleClass().add(INVENTORY_AMOUNT_CLASS);
 
             VBox box = new VBox();
             box.setAlignment(Pos.CENTER);
@@ -1220,22 +1808,29 @@ public class SaveExplorerController {
             }
             if (icon != null) {
                 ImageView imageView = new ImageView(icon);
-                imageView.setFitWidth(48);
-                imageView.setFitHeight(48);
+                imageView.setFitWidth(INVENTORY_ICON_SIZE);
+                imageView.setFitHeight(INVENTORY_ICON_SIZE);
                 imageView.setPreserveRatio(true);
                 box.getChildren().add(imageView);
             } else if (loggedMissingIcons.add(id)) {
                 System.err.println("[InventoryIcon] Missing icon for " + id);
             }
-            box.getChildren().add(nameText);
-            if (idText != null) {
-                box.getChildren().add(idText);
-            }
-            //box.getChildren().addAll(amountText, typeText);
-            box.getChildren().addAll(amountText);
-            cell.setCenter(box);
+            box.getChildren().add(amountText);
 
-            Tooltip.install(cell, new Tooltip(item.toString()));
+            StackPane nameLayer = new StackPane(nameText);
+            nameLayer.setMouseTransparent(true);
+            nameLayer.setPickOnBounds(false);
+            nameLayer.setVisible(false);
+            StackPane.setAlignment(nameText, Pos.TOP_CENTER);
+            StackPane.setAlignment(nameLayer, Pos.TOP_CENTER);
+
+            StackPane layeredContent = new StackPane(box, nameLayer);
+            cell.setCenter(layeredContent);
+
+            cell.hoverProperty().addListener((obs, wasHovering, isHovering) -> {
+                nameLayer.setVisible(isHovering);
+                nameText.setVisible(isHovering);
+            });
 
             final int startX = x;
             final int startY = y;
@@ -1251,6 +1846,7 @@ public class SaveExplorerController {
             Node existing = getNodeFromGrid(grid, x, y);
             if (existing instanceof StackPane sp) {
                 sp.getChildren().setAll(cell);
+                bindSlotContextMenu(sp, cell);
             }
         }
 
@@ -1279,7 +1875,6 @@ public class SaveExplorerController {
         cleaned = cleaned.replace('_', ' ').trim();
         return cleaned;
     }
-
 
     /**
      * Moves an item between coordinates in the same inventory.
@@ -1367,14 +1962,352 @@ public class SaveExplorerController {
         dialog.showAndWait();
     }
 
+    private void attachSlotContextMenu(StackPane slot, String inventoryTitle, GridPane grid,
+                                       JsonArray slotsArray, JsonArray validSlotIndices,
+                                       int x, int y) {
+        ContextMenu menu = new ContextMenu();
+        menu.setStyle("-fx-background-color: black;");
+        MenuItem changeAmount = new MenuItem("Change Amount…");
+        changeAmount.setOnAction(evt -> changeItemAmount(inventoryTitle, grid, slotsArray, validSlotIndices, x, y));
+        MenuItem deleteItem = new MenuItem("Delete Item");
+        deleteItem.setOnAction(evt -> deleteItemAt(inventoryTitle, grid, slotsArray, validSlotIndices, x, y));
+        MenuItem addItem = new MenuItem("Add Item…");
+        addItem.setOnAction(evt -> addItemToSlot(inventoryTitle, grid, slotsArray, validSlotIndices, x, y));
+        menu.getItems().setAll(changeAmount, deleteItem, addItem);
+
+        slot.addEventHandler(ContextMenuEvent.CONTEXT_MENU_REQUESTED, evt -> {
+            JsonObject existing = findItemAt(slotsArray, x, y);
+            boolean hasItem = existing != null;
+            changeAmount.setDisable(!hasItem);
+            deleteItem.setDisable(!hasItem);
+            addItem.setDisable(hasItem);
+            menu.show(slot, evt.getScreenX(), evt.getScreenY());
+            evt.consume();
+        });
+    }
+
+    private void bindSlotContextMenu(StackPane slot, Node child) {
+        if (slot == null || child == null) {
+            return;
+        }
+        child.addEventHandler(ContextMenuEvent.CONTEXT_MENU_REQUESTED, evt -> {
+            slot.fireEvent(evt.copyFor(slot, slot));
+            evt.consume();
+        });
+    }
+
+    private void changeItemAmount(String inventoryTitle, GridPane grid, JsonArray slotsArray,
+                                  JsonArray validSlotIndices, int x, int y) {
+        JsonObject item = findItemAt(slotsArray, x, y);
+        if (item == null) {
+            return;
+        }
+        String id = item.has("b2n") ? item.get("b2n").getAsString() : "";
+        int currentAmount = item.has("1o9") ? item.get("1o9").getAsInt() : 1;
+
+        TextInputDialog dialog = new TextInputDialog(String.valueOf(currentAmount));
+        dialog.setTitle("Change Amount");
+        dialog.setHeaderText("Set amount for " + formatDisplayName(id));
+        dialog.setContentText("Amount:");
+        Optional<String> result = dialog.showAndWait();
+        if (result.isEmpty()) {
+            return;
+        }
+        try {
+            int updatedAmount = Integer.parseInt(result.get().trim());
+            if (updatedAmount <= 0) {
+                return;
+            }
+            item.addProperty("1o9", updatedAmount);
+            int currentMax = item.has("F9q") ? item.get("F9q").getAsInt() : 0;
+            if (updatedAmount > currentMax) {
+                item.addProperty("F9q", updatedAmount);
+            }
+            markInventoryDirty();
+            refreshGridContents(grid, inventoryTitle, slotsArray, validSlotIndices);
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    private void deleteItemAt(String inventoryTitle, GridPane grid, JsonArray slotsArray, JsonArray validSlotIndices, int x, int y) {
+        for (int i = 0; i < slotsArray.size(); i++) {
+            JsonObject obj = slotsArray.get(i).getAsJsonObject();
+            JsonObject idx = obj.has("3ZH") ? obj.getAsJsonObject("3ZH") : null;
+            if (idx == null) {
+                continue;
+            }
+            if (idx.has(">Qh") && idx.has("XJ>") && idx.get(">Qh").getAsInt() == x && idx.get("XJ>").getAsInt() == y) {
+                slotsArray.remove(i);
+                markInventoryDirty();
+                refreshGridContents(grid, inventoryTitle, slotsArray, validSlotIndices);
+                return;
+            }
+        }
+    }
+
+    private void addItemToSlot(String inventoryTitle, GridPane grid, JsonArray slotsArray,
+                               JsonArray validSlotIndices, int x, int y) {
+        Window owner = grid.getScene() != null ? grid.getScene().getWindow() : null;
+        Optional<ItemSelection> selection = showFindItemDialog(inventoryTitle, slotsArray, owner);
+        if (selection.isEmpty()) {
+            return;
+        }
+        ItemSelection chosen = selection.get();
+        JsonObject newItem = createInventoryItem(chosen.entry(), chosen.amount(), x, y);
+        slotsArray.add(newItem);
+        markInventoryDirty();
+        refreshGridContents(grid, inventoryTitle, slotsArray, validSlotIndices);
+    }
+
+    private JsonObject createInventoryItem(ItemCatalog.ItemEntry entry, int amount, int x, int y) {
+        JsonObject newItem = new JsonObject();
+        String id = entry.id();
+        if (!id.startsWith("^")) {
+            id = "^" + id;
+        }
+        newItem.addProperty("b2n", id);
+
+        JsonObject type = new JsonObject();
+        type.addProperty("elv", entry.type().inventoryValue());
+        newItem.add("Vn8", type);
+
+        newItem.addProperty("1o9", amount);
+        int suggestedMax = entry.maxStack() > 0 ? entry.maxStack() : amount;
+        newItem.addProperty("F9q", Math.max(amount, suggestedMax));
+        newItem.addProperty("eVk", 0.0d);
+        newItem.addProperty("b76", true);
+
+        JsonObject index = new JsonObject();
+        index.addProperty(">Qh", x);
+        index.addProperty("XJ>", y);
+        newItem.add("3ZH", index);
+        return newItem;
+    }
+
+    private Optional<ItemSelection> showFindItemDialog(String inventoryTitle, JsonArray slotsArray, Window owner) {
+        EnumSet<ItemCatalog.ItemType> allowedTypes = determineAllowedItemTypes(inventoryTitle, slotsArray);
+        List<ItemCatalog.ItemEntry> entries = ItemCatalog.getItemsForTypes(allowedTypes);
+        if (entries.isEmpty()) {
+            statusLabel.setText("No catalog entries available for " + inventoryTitle);
+            return Optional.empty();
+        }
+
+        Stage dialog = new Stage();
+        if (owner != null) {
+            dialog.initOwner(owner);
+        }
+        dialog.initModality(Modality.WINDOW_MODAL);
+        dialog.setTitle("Find Item – " + inventoryTitle);
+
+        TextField searchField = new TextField();
+        searchField.setPromptText("Search by name or ID…");
+        searchField.getStyleClass().add("item-search-field");
+
+        ObservableList<ItemCatalog.ItemEntry> master = FXCollections.observableArrayList(entries);
+        FilteredList<ItemCatalog.ItemEntry> filtered = new FilteredList<>(master, item -> true);
+        SortedList<ItemCatalog.ItemEntry> sorted = new SortedList<>(
+                filtered,
+                Comparator.comparing(ItemCatalog.ItemEntry::displayName, String.CASE_INSENSITIVE_ORDER)
+        );
+
+        ListView<ItemCatalog.ItemEntry> listView = new ListView<>(sorted);
+        listView.setPrefHeight(360);
+        listView.setCellFactory(lv -> new ListCell<>() {
+            private final ImageView iconView = new ImageView();
+            private final Label nameLabel = new Label();
+            private final Label typeLabel = new Label();
+            private final VBox textBox = new VBox(nameLabel, typeLabel);
+            private final HBox content = new HBox(12, iconView, textBox);
+            {
+                iconView.setFitWidth(36);
+                iconView.setFitHeight(36);
+                iconView.setPreserveRatio(true);
+                textBox.setSpacing(2);
+                nameLabel.getStyleClass().add("inventory-slot-name");
+                typeLabel.getStyleClass().add("inventory-slot-amount");
+                content.setAlignment(Pos.CENTER_LEFT);
+            }
+
+            @Override
+            protected void updateItem(ItemCatalog.ItemEntry item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                    return;
+                }
+                Image icon = IconRegistry.getIcon(item.id());
+                if (icon == null) {
+                    icon = IconRegistry.getIcon("^" + item.id());
+                }
+                iconView.setImage(icon);
+                nameLabel.setText(item.displayName());
+                typeLabel.setText(item.type().label());
+                setGraphic(content);
+            }
+        });
+
+        searchField.textProperty().addListener((obs, oldText, newText) -> {
+            String query = newText == null ? "" : newText.trim().toLowerCase(Locale.ROOT);
+            filtered.setPredicate(entry -> {
+                if (query.isEmpty()) {
+                    return true;
+                }
+                return entry.displayName().toLowerCase(Locale.ROOT).contains(query)
+                        || entry.id().toLowerCase(Locale.ROOT).contains(query);
+            });
+        });
+
+        TextField quantityField = new TextField();
+        quantityField.setPromptText("Amount");
+        UnaryOperator<TextFormatter.Change> quantityFilter = change -> {
+            String next = change.getControlNewText();
+            return next.matches("\\d{0,5}") ? change : null;
+        };
+        quantityField.setTextFormatter(new TextFormatter<>(quantityFilter));
+
+        listView.getSelectionModel().selectedItemProperty().addListener((obs, oldItem, newItem) -> {
+            if (newItem == null) {
+                quantityField.setPromptText("Amount");
+                return;
+            }
+            int suggested = Math.min(newItem.maxStack(), Math.max(1, newItem.type().defaultSuggestedAmount()));
+            quantityField.setPromptText("Max " + newItem.maxStack());
+            if (quantityField.getText().isBlank()) {
+                quantityField.setText(String.valueOf(suggested > 0 ? suggested : 1));
+            }
+        });
+
+        Button addButton = new Button("Add");
+        Button cancelButton = new Button("Cancel");
+        addButton.setDefaultButton(true);
+        cancelButton.setCancelButton(true);
+        addButton.getStyleClass().add("item-search-button");
+        cancelButton.getStyleClass().add("item-search-button");
+
+        addButton.disableProperty().bind(Bindings.createBooleanBinding(
+                () -> listView.getSelectionModel().getSelectedItem() == null || !isPositiveInteger(quantityField.getText()),
+                listView.getSelectionModel().selectedItemProperty(),
+                quantityField.textProperty()
+        ));
+
+        HBox controls = new HBox(10, new Label("Amount:"), quantityField, addButton, cancelButton);
+        controls.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox root = new VBox(12, searchField, listView, controls);
+        root.setPadding(new Insets(10));
+
+        Scene scene = new Scene(root, 520, 520);
+        applyApplicationStyles(scene);
+        dialog.setScene(scene);
+
+        final ItemSelection[] selection = new ItemSelection[1];
+        Runnable commitSelection = () -> {
+            ItemCatalog.ItemEntry chosen = listView.getSelectionModel().getSelectedItem();
+            if (chosen == null) {
+                return;
+            }
+            try {
+                int requested = Integer.parseInt(quantityField.getText());
+                if (requested <= 0) {
+                    return;
+                }
+                if (chosen.maxStack() > 0) {
+                    requested = Math.min(requested, chosen.maxStack());
+                }
+                selection[0] = new ItemSelection(chosen, requested);
+                dialog.close();
+            } catch (NumberFormatException ignored) {
+            }
+        };
+
+        addButton.setOnAction(evt -> commitSelection.run());
+        cancelButton.setOnAction(evt -> dialog.close());
+        listView.setOnMouseClicked(evt -> {
+            if (evt.getClickCount() == 2) {
+                commitSelection.run();
+            }
+        });
+
+        Platform.runLater(searchField::requestFocus);
+        dialog.showAndWait();
+        return Optional.ofNullable(selection[0]);
+    }
+
+    private EnumSet<ItemCatalog.ItemType> determineAllowedItemTypes(String inventoryTitle, JsonArray slotsArray) {
+        EnumSet<ItemCatalog.ItemType> types = EnumSet.noneOf(ItemCatalog.ItemType.class);
+        if (slotsArray != null) {
+            for (JsonElement element : slotsArray) {
+                if (!element.isJsonObject()) {
+                    continue;
+                }
+                JsonObject obj = element.getAsJsonObject();
+                JsonObject typeObj = obj.has("Vn8") ? obj.getAsJsonObject("Vn8") : null;
+                String value = (typeObj != null && typeObj.has("elv")) ? typeObj.get("elv").getAsString() : null;
+                ItemCatalog.ItemType resolved = ItemCatalog.ItemType.fromInventoryValue(value);
+                if (resolved != ItemCatalog.ItemType.UNKNOWN) {
+                    types.add(resolved);
+                }
+            }
+        }
+        if (!types.isEmpty()) {
+            return types;
+        }
+        String lower = inventoryTitle == null ? "" : inventoryTitle.toLowerCase(Locale.ROOT);
+        if (lower.contains("tech") || lower.contains("multi")) {
+            return EnumSet.of(ItemCatalog.ItemType.TECHNOLOGY);
+        }
+        return EnumSet.of(ItemCatalog.ItemType.SUBSTANCE, ItemCatalog.ItemType.PRODUCT);
+    }
+
+    private JsonObject findItemAt(JsonArray slots, int x, int y) {
+        for (int i = 0; i < slots.size(); i++) {
+            JsonObject obj = slots.get(i).getAsJsonObject();
+            JsonObject idx = obj.has("3ZH") ? obj.getAsJsonObject("3ZH") : null;
+            if (idx == null || !idx.has(">Qh") || !idx.has("XJ>")) {
+                continue;
+            }
+            if (idx.get(">Qh").getAsInt() == x && idx.get("XJ>").getAsInt() == y) {
+                return obj;
+            }
+        }
+        return null;
+    }
+
+    private boolean isPositiveInteger(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            return Integer.parseInt(value) > 0;
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+    }
+
+    private void markInventoryDirty() {
+        inventoryModified = true;
+        statusLabel.setText("Pending changes — remember to Save!");
+    }
+
+    private record ItemSelection(ItemCatalog.ItemEntry entry, int amount) {}
+
     /** Gives visual feedback when an item is dropped, then restores its style. */
     private void flashDropHighlight(Node cell) {
         if (!(cell instanceof StackPane sp)) return;
-        sp.setStyle("-fx-border-color:yellow; -fx-border-width:2; -fx-background-color:#2e2e2e;");
+        if (!sp.getStyleClass().contains(INVENTORY_HIGHLIGHT_CLASS)) {
+            sp.getStyleClass().add(INVENTORY_HIGHLIGHT_CLASS);
+        }
         PauseTransition flash = new PauseTransition(Duration.seconds(0.2));
-        flash.setOnFinished(e -> {
-            sp.setStyle("-fx-border-color:#444; -fx-border-width:1; -fx-background-color:#1b1b1b;");
-        });
+        flash.setOnFinished(e -> sp.getStyleClass().remove(INVENTORY_HIGHLIGHT_CLASS));
         flash.play();
+    }
+
+    private void applyApplicationStyles(Scene scene) {
+        if (scene == null) {
+            return;
+        }
+        if (!scene.getStylesheets().contains(APPLICATION_STYLESHEET)) {
+            scene.getStylesheets().add(APPLICATION_STYLESHEET);
+        }
     }
 }

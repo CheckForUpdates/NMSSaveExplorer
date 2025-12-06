@@ -3,6 +3,7 @@ package com.nmssaveexplorer;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
+import javafx.animation.PauseTransition;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
@@ -13,9 +14,11 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.layout.StackPane;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.stage.WindowEvent;
+import javafx.util.Duration;
 
 public class MainMenuController {
 
@@ -35,6 +38,10 @@ public class MainMenuController {
     private Button saveChangesButton;
     @FXML
     private Label statusLabel;
+    @FXML
+    private StackPane loadingOverlay;
+    @FXML
+    private Label loadingMessageLabel;
 
     private final ObservableList<SaveGameLocator.SaveFile> saves = FXCollections.observableArrayList();
     private SaveExplorerController activeController;
@@ -49,6 +56,7 @@ public class MainMenuController {
 
         saveCombo.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> updateSelectionState());
         updateSelectionState();
+        hideLoadingOverlay();
     }
 
     @FXML
@@ -82,7 +90,7 @@ public class MainMenuController {
             setStatus("Choose a save file first.");
             return;
         }
-        openJsonEditor(saveFile);
+        runWithLoadingOverlay("Opening JSON explorer...", "Failed to open JSON explorer: ", () -> openJsonEditor(saveFile));
     }
 
     @FXML
@@ -92,7 +100,7 @@ public class MainMenuController {
             setStatus("Choose a save file first.");
             return;
         }
-        openExosuitInventory(saveFile);
+        runWithLoadingOverlay("Loading inventories...", "Failed to open Exosuit inventory: ", () -> openExosuitInventory(saveFile));
     }
 
     @FXML
@@ -142,45 +150,72 @@ public class MainMenuController {
         statusLabel.setText(text);
     }
 
-    private void openJsonEditor(SaveGameLocator.SaveFile saveFile) {
-        try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/SaveExplorer.fxml"));
-            Parent root = loader.load();
-            SaveExplorerController controller = loader.getController();
-            controller.loadSaveFile(saveFile.path().toFile());
+    private void openJsonEditor(SaveGameLocator.SaveFile saveFile) throws Exception {
+        FXMLLoader loader = new FXMLLoader(getClass().getResource("/SaveExplorer.fxml"));
+        Parent root = loader.load();
+        SaveExplorerController controller = loader.getController();
+        controller.loadSaveFile(saveFile.path().toFile());
 
-            Stage stage = new Stage();
-            Stage owner = getOwningStage();
-            if (owner != null) {
-                stage.initOwner(owner);
-            }
-            stage.setTitle("Save Explorer - " + saveFile.displayName());
-            stage.setScene(new Scene(root, 1000, 700));
-            registerActiveController(controller, saveFile, stage);
-            stage.show();
-
-            setStatus("Opened JSON explorer.");
-        } catch (Exception ex) {
-            ex.printStackTrace();
-            setStatus("Failed to open JSON explorer: " + ex.getMessage());
+        Stage stage = new Stage();
+        Stage owner = getOwningStage();
+        if (owner != null) {
+            stage.initOwner(owner);
         }
+        stage.setTitle("Save Explorer - " + saveFile.displayName());
+        stage.setScene(new Scene(root, 1000, 700));
+        registerActiveController(controller, saveFile, stage);
+        stage.show();
+
+        setStatus("Opened JSON explorer.");
     }
 
-    private void openExosuitInventory(SaveGameLocator.SaveFile saveFile) {
-        try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/SaveExplorer.fxml"));
-            loader.load();
-            SaveExplorerController controller = loader.getController();
-            controller.loadSaveFile(saveFile.path().toFile());
-            controller.showExosuitInventory(getOwningStage());
-            Stage inventoryStage = controller.getLastInventoryStage();
-            registerActiveController(controller, saveFile, inventoryStage);
+    private void openExosuitInventory(SaveGameLocator.SaveFile saveFile) throws Exception {
+        FXMLLoader loader = new FXMLLoader(getClass().getResource("/SaveExplorer.fxml"));
+        loader.load();
+        SaveExplorerController controller = loader.getController();
+        controller.loadSaveFile(saveFile.path().toFile());
+        controller.showExosuitInventory(getOwningStage());
+        Stage inventoryStage = controller.getLastInventoryStage();
+        registerActiveController(controller, saveFile, inventoryStage);
 
-            setStatus("Opened Exosuit inventory for " + saveFile.displayName());
-        } catch (Exception ex) {
-            ex.printStackTrace();
-            setStatus("Failed to open Exosuit inventory: " + ex.getMessage());
+        setStatus("Opened Exosuit inventory for " + saveFile.displayName());
+    }
+
+    private void runWithLoadingOverlay(String message, String failurePrefix, OverlayTask task) {
+        showLoadingOverlay(message);
+        PauseTransition delay = new PauseTransition(Duration.millis(75));
+        delay.setOnFinished(event -> {
+            try {
+                task.run();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                setStatus(failurePrefix + ex.getMessage());
+            } finally {
+                hideLoadingOverlay();
+            }
+        });
+        delay.play();
+    }
+
+    private void showLoadingOverlay(String message) {
+        if (loadingOverlay == null) {
+            return;
         }
+        if (loadingMessageLabel != null) {
+            loadingMessageLabel.setText(message);
+        }
+        loadingOverlay.setManaged(true);
+        loadingOverlay.setVisible(true);
+        loadingOverlay.setMouseTransparent(false);
+    }
+
+    private void hideLoadingOverlay() {
+        if (loadingOverlay == null) {
+            return;
+        }
+        loadingOverlay.setVisible(false);
+        loadingOverlay.setManaged(false);
+        loadingOverlay.setMouseTransparent(true);
     }
 
     private void registerActiveController(SaveExplorerController controller,
@@ -233,5 +268,10 @@ public class MainMenuController {
                 setText(text);
             }
         }
+    }
+
+    @FunctionalInterface
+    private interface OverlayTask {
+        void run() throws Exception;
     }
 }
