@@ -35,6 +35,8 @@ public class MainMenuController {
     @FXML
     private Button browseButton;
     @FXML
+    private Button materialLookupButton;
+    @FXML
     private Button saveChangesButton;
     @FXML
     private Label statusLabel;
@@ -101,6 +103,11 @@ public class MainMenuController {
             return;
         }
         runWithLoadingOverlay("Loading inventories...", "Failed to open Exosuit inventory: ", () -> openExosuitInventory(saveFile));
+    }
+
+    @FXML
+    private void onMaterialLookup() {
+        new MaterialLookupDialog(getOwningStage()).showAndWait();
     }
 
     @FXML

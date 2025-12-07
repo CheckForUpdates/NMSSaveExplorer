@@ -36,6 +36,7 @@
                 <VBox spacing="8">
                     <Button fx:id="openJsonButton" onAction="#onOpenJsonEditor" prefWidth="220" text="Open Raw JSON" />
                     <Button fx:id="openInventoryButton" onAction="#onOpenExosuitInventory" prefWidth="220" text="Open Inventories" />
+                    <Button fx:id="materialLookupButton" onAction="#onMaterialLookup" prefWidth="220" text="Material Lookup" />
                     <Button fx:id="saveChangesButton" onAction="#onSaveChanges" prefWidth="220" text="Save Changes" />
                 </VBox>
             </VBox>
