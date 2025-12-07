@@ -36,6 +36,7 @@ import com.nmssaveexplorer.inventory.MultitoolInventoryController;
 import com.nmssaveexplorer.inventory.MultitoolTechInventoryController;
 import com.nmssaveexplorer.inventory.ShipInventoryController;
 import com.nmssaveexplorer.inventory.ShipTechInventoryController;
+import com.nmssaveexplorer.inventory.StorageInventoryController;
 import com.nmssaveexplorer.registry.IconRegistry;
 import com.nmssaveexplorer.registry.ItemCatalog;
 import com.nmssaveexplorer.registry.ItemDefinitionRegistry;
@@ -68,6 +69,8 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Separator;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.TreeCell;
@@ -917,6 +920,14 @@ public class SaveExplorerController {
                 tabs.getTabs().add(tab);
             });
 
+            // Add Storage Containers to map (for Manager Tab usage) without creating individual tabs
+            for (int i = 0; i < 10; i++) {
+                StorageInventoryController sc = new StorageInventoryController(i);
+                JsonArray slots = sc.resolveSlots(inventoryRoot);
+                JsonArray valid = sc.resolveValidSlots(inventoryRoot);
+                inventories.put(sc.inventoryName(), new InventoryPayload(slots, valid));
+            }
+
             Tab currencyTab = buildCurrencyTab(root);
             if (currencyTab != null) {
                 tabs.getTabs().add(currencyTab);
@@ -926,6 +937,10 @@ public class SaveExplorerController {
             if (expeditionTab != null) {
                 tabs.getTabs().add(expeditionTab);
             }
+
+            // Storage Manager Tab
+            Tab storageTab = buildStorageManagerTab(inventories, invStage);
+            tabs.getTabs().add(storageTab);
 
             if (tabs.getTabs().isEmpty()) {
                 statusLabel.setText("Nothing available for display.");
@@ -1397,6 +1412,149 @@ public class SaveExplorerController {
             field.setText(formatQuantity(currentValue));
         }
         return currentValue;
+    }
+
+    // ================= STORAGE MANAGER TAB =================
+
+    private Tab buildStorageManagerTab(Map<String, InventoryPayload> inventories, Stage ownerStage) {
+        VBox content = new VBox(14);
+        content.setPadding(new Insets(16));
+        content.setFillWidth(true);
+        content.getStyleClass().add("storage-manager");
+
+        Label header = new Label("Storage Container Management");
+        header.getStyleClass().add("section-header");
+        content.getChildren().add(header);
+
+        // 1. Container Management Section
+        HBox containerRow = new HBox(12);
+        containerRow.setAlignment(Pos.CENTER_LEFT);
+
+        ComboBox<String> containerCombo = new ComboBox<>();
+        // Filter keys to only storage containers
+        List<String> storageKeys = inventories.keySet().stream()
+                .filter(k -> k.startsWith("Storage Container "))
+                .sorted(Comparator.comparingInt(this::extractContainerNumber))
+                .toList();
+
+        containerCombo.setItems(FXCollections.observableArrayList(storageKeys));
+        if (!storageKeys.isEmpty()) {
+            containerCombo.getSelectionModel().select(0);
+        }
+        containerCombo.setPrefWidth(200);
+
+        Button openButton = new Button("Open Container");
+        openButton.setOnAction(e -> {
+            String selected = containerCombo.getValue();
+            if (selected != null && inventories.containsKey(selected)) {
+                InventoryPayload p = inventories.get(selected);
+                openInventoryWindow(ownerStage, selected, p.slots(), p.validSlots());
+            }
+        });
+
+        containerRow.getChildren().addAll(new Label("Select Container:"), containerCombo, openButton);
+        content.getChildren().add(containerRow);
+
+        content.getChildren().add(new Separator());
+
+        // 2. Global Search Section
+        Label searchHeader = new Label("Global Item Search");
+        searchHeader.getStyleClass().add("section-sub-header");
+        content.getChildren().add(searchHeader);
+
+        HBox searchRow = new HBox(12);
+        searchRow.setAlignment(Pos.CENTER_LEFT);
+        TextField searchField = new TextField();
+        searchField.setPromptText("Search item name...");
+        searchField.setPrefWidth(300);
+        Button searchButton = new Button("Search");
+        searchRow.getChildren().addAll(searchField, searchButton);
+        content.getChildren().add(searchRow);
+
+        ListView<HBox> resultsList = new ListView<>();
+        resultsList.setPrefHeight(300);
+        VBox.setVgrow(resultsList, Priority.ALWAYS);
+        content.getChildren().add(resultsList);
+
+        // Search Action
+        Runnable doSearch = () -> {
+            resultsList.getItems().clear();
+            String query = searchField.getText().trim().toLowerCase();
+            if (query.isEmpty()) return;
+
+            for (String key : storageKeys) {
+                InventoryPayload inventory = inventories.get(key);
+                JsonArray slots = inventory.slots();
+                for (JsonElement elem : slots) {
+                    if (!elem.isJsonObject()) continue;
+                    JsonObject slotObj = elem.getAsJsonObject();
+
+                    // Extract Item details using same logic as buildInventoryGrid
+                    String id = slotObj.has("b2n") ? slotObj.get("b2n").getAsString() : "?";
+                    // Using ItemDefinitionRegistry would be ideal but it's static?
+                    // In buildInventoryGrid: ItemDefinitionRegistry.getDisplayName(id)
+                    String name = ItemDefinitionRegistry.getDisplayName(id);
+                    if (name == null || name.isBlank()) {
+                         // Fallback logic from buildInventoryGrid
+                         // (Usually formatDisplayName(id))
+                         name = id; // simplified for search logic or replicate formatDisplayName
+                    }
+
+                    if (name.toLowerCase().contains(query) || id.toLowerCase().contains(query)) {
+                        // Found match
+                        HBox itemRow = new HBox(10);
+                        itemRow.setAlignment(Pos.CENTER_LEFT);
+                        itemRow.setPadding(new Insets(4));
+                        
+                        // Icon
+                        Image icon = IconRegistry.getIcon(id);
+                        if (icon == null && id.startsWith("^") && id.length() > 1) {
+                             icon = IconRegistry.getIcon(id.substring(1));
+                        }
+                        if (icon != null) {
+                            ImageView iv = new ImageView(icon);
+                            iv.setFitWidth(32);
+                            iv.setFitHeight(32);
+                            itemRow.getChildren().add(iv);
+                        }
+
+                        // Text
+                        int amount = slotObj.has("1o9") ? slotObj.get("1o9").getAsInt() : 0;
+                        Label info = new Label(name + " (" + amount + ") in " + key);
+                        itemRow.getChildren().add(info);
+
+                        // Click action
+                        itemRow.setOnMouseClicked(ev -> {
+                            if (ev.getClickCount() == 2) {
+                                openInventoryWindow(ownerStage, key, inventory.slots(), inventory.validSlots());
+                            }
+                        });
+
+                        resultsList.getItems().add(itemRow);
+                    }
+                }
+            }
+
+            if (resultsList.getItems().isEmpty()) {
+                resultsList.getItems().add(new HBox(new Label("No results found in storage containers.")));
+            }
+        };
+
+        searchButton.setOnAction(e -> doSearch.run());
+        // Live search listener
+        searchField.textProperty().addListener((obs, oldVal, newVal) -> doSearch.run());
+
+        Tab tab = new Tab("Storage Manager", content);
+        tab.setClosable(false);
+        return tab;
+    }
+
+    private int extractContainerNumber(String containerName) {
+        try {
+            return Integer.parseInt(containerName.replace("Storage Container ", ""));
+        } catch (NumberFormatException e) {
+            return 999;
+        }
     }
 
     private double getMilestoneValue(JsonArray milestoneValues, int index) {
