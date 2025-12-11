@@ -148,21 +148,23 @@ public final class SaveGameLocator {
         }
     }
 
-    private static void scanForSaves(Path searchRoot, Path displayRoot, boolean caseInsensitiveFs, Map<String, SaveFile> result) {
+    private static void scanForSaves(Path searchRoot, Path displayRoot,
+                                 boolean caseInsensitiveFs, Map<String, SaveFile> result) {
         try (Stream<Path> stream = Files.walk(searchRoot, SEARCH_DEPTH)) {
             stream.filter(Files::isRegularFile)
-                  .filter(path -> {
-                      String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-                      return name.endsWith(".hg") && name.startsWith("save");
-                  })
-                  .sorted()
-                  .forEach(path -> {
-                      Path canonical = canonicalPath(path);
-                      String key = pathKey(canonical, caseInsensitiveFs);
-                      if (key != null) {
-                          result.putIfAbsent(key, new SaveFile(canonical, displayRoot));
-                      }
-                  });
+                .filter(path -> {
+                    String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+                    return name.endsWith(".hg") && name.startsWith("save");
+                })
+                .sorted()
+                .forEach(path -> {
+                    Path canonical = canonicalPath(path); // for dedupe only
+                    String key = pathKey(canonical, caseInsensitiveFs);
+                    if (key != null) {                        
+                        Path discovered = path.toAbsolutePath().normalize();
+                        result.putIfAbsent(key, new SaveFile(discovered, displayRoot));
+                    }
+                });
         } catch (Exception ignored) {
             // Ignore inaccessible roots; caller can present fallback options.
         }
